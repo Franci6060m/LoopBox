@@ -10,6 +10,9 @@ query SearchMediaPage($q: String, $page: Int, $perPage: Int, $type: MediaType = 
       type
       status
       episodes
+      nextAiringEpisode {
+        episode
+      }
       coverImage {
         large
       }

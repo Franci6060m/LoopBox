@@ -11,6 +11,9 @@ query MediaById($id: Int) {
     source
     status
     episodes
+    nextAiringEpisode {
+      episode
+    }
     season
     seasonYear
     startDate {
