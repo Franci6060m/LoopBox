@@ -3,6 +3,9 @@ name: Build LoopBox release APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -64,3 +67,11 @@ jobs:
         with:
           name: loopbox-release-apk
           path: out/loopbox-release.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" out/loopbox-release.apk \
+            --title "LoopBox build ${{ github.run_number }}" \
+            --notes "Release APK for LoopBox."
