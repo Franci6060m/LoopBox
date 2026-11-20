@@ -1,0 +1,77 @@
+# Copy to local.properties (not committed) and fill in as needed.
+
+# Shikimori / MAL / AniList — OAuth для плиток «онлайн БД».
+# После добавления ключей сделайте Rebuild Project (BuildConfig).
+#
+# Redirect URI укажите на сайте сервиса ТОЧНО так (для каждого своё):
+#   Shikimori:  vetro://oauth/shikimori/callback
+#   MAL:        vetro://oauth/myanimelist/callback
+#   AniList:    vetro://oauth/anilist/callback
+#
+# Регистрация приложений:
+#   https://shikimori.one/oauth/applications
+#   https://myanimelist.net/apiconfig
+#   https://anilist.co/settings/developer
+SHIKIMORI_CLIENT_ID=
+SHIKIMORI_CLIENT_SECRET=
+MAL_CLIENT_ID=
+MAL_CLIENT_SECRET=
+ANILIST_CLIENT_ID=
+ANILIST_CLIENT_SECRET=
+
+# --- Фильмы/сериалы: TMDB (канонический источник) + Kinopoisk (RU-обогащение) ---
+# TMDB: https://www.themoviedb.org/settings/api (v3 auth — обычный api_key, не Bearer-токен)
+# Kinopoisk: неофициальный kinopoiskapiunofficial.tech; ключ создаётся после регистрации
+#   на https://kinopoiskapiunofficial.tech/ и передаётся в заголовке X-API-KEY.
+#   ВНИМАНИЕ: ключ попадает в APK как обычная BuildConfig-строка и извлекаем декомпиляцией —
+#   для бесплатного TMDB это принятый риск, для потенциально платного Kinopoisk-ключа риск
+#   выше (см. .scratch/movie-series-infra/spec.md → Non-functional requirements).
+TMDB_API_KEY=
+KINOPOISK_API_KEY=
+# ПоискКино (api.poiskkino.dev, бывший kinopoisk.dev): русские названия/описания + id TMDB и IMDb.
+#   Бесплатный ключ (200 запросов в сутки) выдаёт Telegram-бот @poiskkinodev_bot.
+POISKKINO_API_KEY=
+
+# --- Vetro Collection Sync (Supabase + Google / GitHub) ---
+# Callback в приложение (НЕ путать с GitHub OAuth App callback):
+#   vetrocollection://auth-callback
+# В Supabase Dashboard → Authentication → URL Configuration → Redirect URLs добавьте:
+#   vetrocollection://auth-callback
+#
+# GitHub OAuth App → Authorization callback URL (другой URL, менять нельзя — так и надо):
+#   https://<project-ref>.supabase.co/auth/v1/callback
+#
+# Один аккаунт для Google + GitHub:
+#   Supabase Dashboard → Authentication → Settings → включить «Manual linking»
+#   В приложении: войти основным способом → Облако → «Привязать Google/GitHub»
+#   Автослияние работает только при одинаковом подтверждённом email у обоих провайдеров.
+#
+# Если таблица anime пустая после синка — SQL Editor → выполни:
+#   supabase/migrations/20260625120000_align_production_schema.sql
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+
+# --- Обогащение карточек и субтитры (все ключи необязательны) ---
+# Пустой ключ = источник просто не опрашивается, остальное работает.
+#   OpenSubtitles: https://www.opensubtitles.com/consumers (ключ приложения; пользователь может
+#     подключить и свой в «Аккаунтах» — режим BYOK)
+#   OMDb (рейтинги IMDb/RT/Metacritic): https://www.omdbapi.com/apikey.aspx
+#   YouTube Data API v3 (трейлеры) и Google Books: https://console.cloud.google.com/apis/credentials
+#     — ключ ограничен Android-приложением: добавьте com.phnem.vetro и SHA-1 своей подписи
+#   Fanart.tv (логотипы, фоны): https://fanart.tv/get-an-api-key/
+#   NYT Books: https://developer.nytimes.com/get-started
+#   TasteDive: https://tastedive.com/read/api
+#   Trakt (второй related-граф фильмов/сериалов, по флагу в рекомендациях):
+#     https://trakt.tv/oauth/applications → Client ID (нужен верифицированный GitHub-аккаунт)
+TRAKT_CLIENT_ID=
+OPENSUBTITLES_API_KEY=
+OMDB_API_KEY=
+YOUTUBE_API_KEY=
+FANART_API_KEY=
+NYT_API_KEY=
+TASTEDIVE_API_KEY=
+GOOGLE_BOOKS_API_KEY=
+
+# --- MicroML: добровольный сбор таблиц для дообучения моделей ---
+# https-адрес Cloudflare Worker из tools/microml-collector. Пусто — сбора в приложении нет.
+MICROML_COLLECTOR_URL=

@@ -1,0 +1,36 @@
+query SearchMedia($q: String) {
+  Media(search: $q, type: ANIME) {
+    title {
+      romaji
+      english
+    }
+    description
+    coverImage {
+      extraLarge
+      large
+    }
+    type
+    format
+    source
+    status
+    episodes
+    season
+    seasonYear
+    studios(isMain: true) {
+      nodes {
+        name
+      }
+    }
+    nextAiringEpisode {
+      episode
+      airingAt
+    }
+    averageScore
+    genres
+    startDate {
+      year
+      month
+      day
+    }
+  }
+}

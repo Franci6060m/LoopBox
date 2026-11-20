@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Знак V + солнце («Хиномару»). Координаты знака — в системе исходного логотипа,
+     группа переносит их в центр 108dp-холста. Цвета: values / values-night. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="878"
+        android:pivotY="389"
+        android:scaleX="0.118125"
+        android:scaleY="0.118125"
+        android:translateX="-825.6875"
+        android:translateY="-333.3125">
+        <path
+            android:fillColor="@color/ic_launcher_mark"
+            android:strokeColor="@color/ic_launcher_mark"
+            android:strokeWidth="40"
+            android:strokeLineJoin="round"
+            android:pathData="M694,258H774L912,464L904,504L862,520Z" />
+        <path
+            android:fillColor="@color/ic_launcher_sun"
+            android:pathData="M940,298a80,80 0,1 0,160 0a80,80 0,1 0,-160 0Z" />
+    </group>
+</vector>

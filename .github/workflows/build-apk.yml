@@ -1,0 +1,58 @@
+name: Build LoopBox release APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release (unsigned)
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Sign release APK
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -e
+          mkdir -p out
+          SRC=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          KS="$RUNNER_TEMP/release.jks"
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$KS"
+            PASS="$KS_PASS"; ALIAS="$KS_ALIAS"
+          else
+            PASS=$(openssl rand -hex 16); ALIAS="loopbox"
+            keytool -genkeypair -keystore "$KS" -storepass "$PASS" -keypass "$PASS" \
+              -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=LoopBox"
+            echo "No signing secrets set: signed with a throwaway key. Add KEYSTORE_BASE64, KEYSTORE_PASSWORD and KEY_ALIAS secrets to keep one signature across builds."
+          fi
+          BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)
+          "$ANDROID_HOME/build-tools/$BT/zipalign" -p -f 4 "$SRC" aligned.apk
+          "$ANDROID_HOME/build-tools/$BT/apksigner" sign --ks "$KS" \
+            --ks-pass "pass:$PASS" --ks-key-alias "$ALIAS" --key-pass "pass:$PASS" \
+            --out out/loopbox-release.apk aligned.apk
+          "$ANDROID_HOME/build-tools/$BT/apksigner" verify out/loopbox-release.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loopbox-release-apk
+          path: out/loopbox-release.apk

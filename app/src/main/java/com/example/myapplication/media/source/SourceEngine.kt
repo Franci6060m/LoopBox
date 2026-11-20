@@ -1,0 +1,331 @@
+package com.example.myapplication.media.source
+
+import android.util.Log
+import com.example.myapplication.data.local.WebLinksStore
+import com.example.myapplication.data.models.Anime
+import com.example.myapplication.domain.seasons.SeasonInfo
+import com.example.myapplication.domain.seasons.forSourceLookup
+import com.example.myapplication.media.intelligence.SourceIntelligence
+import com.example.myapplication.media.intelligence.SourceScoring
+import com.example.myapplication.media.source.movieseries.MovieSeriesStreamingProvider
+import com.example.myapplication.media.source.movieseries.NoProviderHealth
+import com.example.myapplication.media.source.movieseries.ProviderHealthRegistry
+import com.example.myapplication.media.source.movieseries.ProviderHealthStore
+import com.example.myapplication.network.AppLanguage
+import com.example.myapplication.network.WebLinkSites
+
+/**
+ * Bounded, native-first media resolution.
+ *
+ * Page URLs are never sent to embedded Python. Native sources run with a hard timeout, and the
+ * direct URL fallback is attempted only after every applicable native source returned no video.
+ */
+class SourceEngine(
+    private val aniLibriaSource: AniLibriaSource,
+    private val animeGoSource: AnimeGoSource,
+    private val jutSuSource: JutSuSource,
+    private val kodikSource: KodikSource,
+    private val animeHeavenSource: AnimeHeavenSource,
+    private val urlSource: UrlSource,
+    private val webLinksStore: WebLinksStore,
+    private val movieSeriesSources: List<MovieSeriesStreamingProvider> = emptyList(),
+    private val providerHealth: ProviderHealthRegistry = NoProviderHealth,
+    /** User-installed sources, resolved per request so settings changes apply without a restart. */
+    private val customSources: suspend () -> List<MovieSeriesStreamingProvider> = { emptyList() },
+    /** Рейтинг источников на этом устройстве: исходы пишутся сюда, порядок берётся отсюда. */
+    private val intelligence: SourceIntelligence? = null,
+) {
+    suspend fun resolveHosters(
+        anime: Anime,
+        episodeNumber: Int,
+        seasonInfo: SeasonInfo? = null,
+        language: AppLanguage = AppLanguage.RU,
+    ): List<VetroHoster> = resolve(
+        PlaybackRequest(anime, episodeNumber, seasonInfo, language)
+    ).hostersOrEmpty
+
+    suspend fun resolve(incoming: PlaybackRequest): PlaybackResolution {
+        // Единственная точка, где номер сезона приводится к шкале источников. Спецвыпуск (OVA,
+        // фильм франшизы) — самостоятельный релиз, а не N-й сезон, и его технический номер ни
+        // одному источнику показывать нельзя: AniLibria берёт релиз ИНДЕКСОМ по цепочке и молча
+        // отдала бы чужой сезон. Нормализуем здесь, а не в каждом провайдере, — иначе следующий
+        // добавленный источник снова забудет это сделать.
+        val request = incoming.copy(seasonInfo = incoming.seasonInfo?.forSourceLookup())
+        if (request.episodeNumber <= 0) return PlaybackResolution.NoMatch
+        val route = PlaybackRoutingPolicy.route(request.mediaType, request.language)
+        if (route == PlaybackRoute.None) return PlaybackResolution.NotConfigured(request.mediaType)
+        if (route.movieSeriesLanguage != null) return resolveMovieSeries(request)
+
+        runCatching { intelligence?.ensureLoaded() }
+        val batch = when (route) {
+            PlaybackRoute.AnimeRu -> resolveRu(request.anime, request.episodeNumber, request.seasonInfo)
+            PlaybackRoute.AnimeEn -> resolveEn(request.anime, request.episodeNumber, request.seasonInfo)
+            PlaybackRoute.MovieSeriesRu,
+            PlaybackRoute.MovieSeriesEn,
+            PlaybackRoute.None,
+            -> error("Route handled above")
+        }
+        val normalized = batch.hosters.withPropagatedSkipReference().playableHosters()
+        Log.i(
+            TAG,
+            "Resolved ${normalized.size} hosters / " +
+                "${normalized.sumOf { it.videos.orEmpty().size }} videos for " +
+                "${request.anime.title} S${request.seasonNumber}E${request.episodeNumber} " +
+                "[${request.language}]",
+        )
+        return playbackResolution(orderByLearnedScore(normalized, request.language), batch.hadFailure)
+    }
+
+    /**
+     * Источники, которые у этого пользователя работают лучше, идут первыми. Порядок стабильный и
+     * грубый (десятки баллов, не единицы): оценка шумит, а переставлять источники из-за одного
+     * удачного просмотра нельзя. Дальше список ранжирует разрешение и надёжность формата - выученный
+     * порядок решает между равными.
+     */
+    private fun orderByLearnedScore(hosters: List<VetroHoster>, language: AppLanguage): List<VetroHoster> {
+        val learned = intelligence ?: return hosters
+        fun tier(hoster: VetroHoster): Int {
+            val provider = hoster.videos.orEmpty().firstNotNullOfOrNull { it.providerKey }
+                ?: return SourceScoring.NEUTRAL / 10
+            return learned.scoreOf(provider, language).value / 10
+        }
+        return hosters.withIndex()
+            .sortedWith(compareByDescending<IndexedValue<VetroHoster>> { tier(it.value) }.thenBy { it.index })
+            .map { it.value }
+    }
+
+    private suspend fun resolveMovieSeries(request: PlaybackRequest): PlaybackResolution {
+        (providerHealth as? ProviderHealthStore)?.ensureLoaded()
+        return resolveMovieSeriesSources(
+            request = request,
+            // Built-in providers first; a user-installed source joins the same cascade rather than
+            // replacing anything.
+            sources = movieSeriesSources + customSources(),
+            timeoutMs = PERSONAL_SOURCE_TIMEOUT_MS,
+            health = providerHealth,
+        )
+    }
+
+    private suspend fun resolveRu(
+        anime: Anime,
+        episodeNumber: Int,
+        seasonInfo: SeasonInfo?,
+    ): SourceBatch {
+        webLinksStore.ensureLoaded()
+        val links = webLinksStore.flow.value[anime.id]?.ruLinks.orEmpty()
+        val seasonQuery = anime.seasonSourceQuery(seasonInfo)
+        val aniKnown = links.firstOrNull {
+            it.siteKey == WebLinkSites.ANILIBRIA_TOP ||
+                it.siteKey == WebLinkSites.ANILIBRIA_TV
+        }?.url
+        val seasonSpecificAniUrl = aniKnown.takeIf {
+            seasonInfo == null || seasonInfo.seasonNumber <= 1
+        }
+        val jutKnown = links.firstOrNull { it.siteKey == WebLinkSites.JUTSU }?.url
+
+        // Exact stored links are the most reliable title disambiguation and avoid a search roundtrip.
+        // They run in the same parallel batch as the other sources: as a separate first batch they
+        // added up to EXACT_SOURCE_TIMEOUT_MS before any other source even started.
+        val attempts = runCalls(
+            language = AppLanguage.RU,
+            calls = buildList {
+                if (seasonSpecificAniUrl != null) {
+                    add(
+                        PlaybackProviderCall("known source", EXACT_SOURCE_TIMEOUT_MS) {
+                            aniLibriaSource.resolveEpisode(
+                                seasonQuery.anime,
+                                episodeNumber,
+                                seasonSpecificAniUrl,
+                            )
+                        }
+                    )
+                }
+                // Keep resolving: exact links are fast, but they must not hide other studios.
+                if (seasonSpecificAniUrl == null) {
+                    add(
+                        PlaybackProviderCall("AniLiberty", SOURCE_TIMEOUT_MS) {
+                            aniLibriaSource.resolveEpisode(
+                                anime = anime,
+                                episodeNumber = episodeNumber,
+                                seasonInfo = seasonInfo,
+                            )
+                        }
+                    )
+                }
+                // AnimeGo больше не выпадает из гонки на сезонах без собственного названия:
+                // он получает франшизные алиасы и ищет ими.
+                add(
+                    PlaybackProviderCall("AnimeGo", SOURCE_TIMEOUT_MS) {
+                        animeGoSource.resolveEpisode(seasonQuery, episodeNumber)
+                    }
+                )
+                add(
+                    PlaybackProviderCall("Kodik", KODIK_SOURCE_TIMEOUT_MS) {
+                        kodikSource.resolveEpisode(anime, episodeNumber, seasonInfo)
+                    }
+                )
+                // jut.su — источник ТАЙМСКИПОВ, не видео: сайт перешёл на новый плеер и отдаёт
+                // в разметке заглушки вместо адресов (§ .scratch/season-source-resolution,
+                // TICKET-02). Конфиг с таймингами по-прежнему приезжает, поэтому ветку держим,
+                // но видео из неё отбрасываем — как это давно делает EN-путь.
+                add(
+                    PlaybackProviderCall("jut.su reference", SOURCE_TIMEOUT_MS) {
+                        jutSuSource.resolveEpisode(anime, episodeNumber, seasonInfo, jutKnown)
+                            .map { it.copy(videos = emptyList()) }
+                    }
+                )
+                // VFT Торренты (Rutor, RuTracker, Nyaa, Jackett): позволяет воспроизводить и скачивать раздачи аниме
+                movieSeriesSources.firstOrNull { it.id.value == "vft_torrents" }?.let { torrentProvider ->
+                    add(
+                        PlaybackProviderCall(torrentProvider.displayName, SOURCE_TIMEOUT_MS) {
+                            val res = torrentProvider.resolve(PlaybackRequest(anime, episodeNumber, seasonInfo, AppLanguage.RU))
+                            (res as? com.example.myapplication.media.source.movieseries.ProviderResolution.Found)?.hosters.orEmpty()
+                        }
+                    )
+                }
+            }
+        )
+        val resolved = attempts.flatMap { it.value.orEmpty() }
+        if (resolved.hasPlayableVideo()) {
+            return SourceBatch(resolved, attempts.any { it.failed })
+        }
+
+        val direct = resolveDirectFallback(links.map { it.url }, AppLanguage.RU)
+        return SourceBatch(resolved + direct.value.orEmpty(), attempts.any { it.failed } || direct.failed)
+    }
+
+    private suspend fun resolveEn(
+        anime: Anime,
+        episodeNumber: Int,
+        seasonInfo: SeasonInfo?,
+    ): SourceBatch {
+        val attempts = runCalls(
+            language = AppLanguage.EN,
+            calls = buildList {
+                // AnimeHeaven needs three sequential page loads (search → title → gate).
+                add(
+                    PlaybackProviderCall("AnimeHeaven", EN_SOURCE_TIMEOUT_MS) {
+                        animeHeavenSource.resolveEpisode(anime, episodeNumber, seasonInfo)
+                    }
+                )
+                add(
+                    PlaybackProviderCall("jut.su reference", SOURCE_TIMEOUT_MS) {
+                        jutSuSource.resolveEpisode(anime, episodeNumber, seasonInfo)
+                            .map { it.copy(videos = emptyList()) }
+                    }
+                )
+                // VFT Торренты (Nyaa, The Pirate Bay, Jackett): раздачи на английском / оригинальном японском
+                movieSeriesSources.firstOrNull { it.id.value == "vft_torrents" }?.let { torrentProvider ->
+                    add(
+                        PlaybackProviderCall(torrentProvider.displayName, SOURCE_TIMEOUT_MS) {
+                            val res = torrentProvider.resolve(PlaybackRequest(anime, episodeNumber, seasonInfo, AppLanguage.EN))
+                            (res as? com.example.myapplication.media.source.movieseries.ProviderResolution.Found)?.hosters.orEmpty()
+                        }
+                    )
+                }
+            }
+        )
+        val resolved = attempts.flatMap { it.value.orEmpty() }
+        if (resolved.hasPlayableVideo()) {
+            return SourceBatch(resolved, attempts.any { it.failed })
+        }
+
+        webLinksStore.ensureLoaded()
+        val links = webLinksStore.flow.value[anime.id]?.enLinks.orEmpty()
+        val direct = resolveDirectFallback(links.map { it.url }, AppLanguage.EN)
+        return SourceBatch(
+            resolved + direct.value.orEmpty(),
+            attempts.any { it.failed } || direct.failed,
+        )
+    }
+
+    private suspend fun resolveDirectFallback(urls: List<String>, language: AppLanguage): SourceAttempt<List<VetroHoster>> {
+        val direct = urls.firstOrNull(urlSource::canResolveDirect)
+            ?: return SourceAttempt(label = "direct URL", value = emptyList())
+        return runCalls(
+            language = language,
+            calls = listOf(
+                PlaybackProviderCall("direct URL", DIRECT_TIMEOUT_MS) {
+                    urlSource.resolveFromWebUrl(direct)
+                }
+            )
+        ).single()
+    }
+
+    /**
+     * Исход КАЖДОЙ ветки попадает в лог, включая пустую. Раньше молчание источника было
+     * неотличимо от того, что его вообще не запускали, и отказ разбирался по сырым строкам Ktor.
+     */
+    private suspend fun runCalls(
+        language: AppLanguage,
+        calls: List<PlaybackProviderCall<List<VetroHoster>>>,
+    ): List<SourceAttempt<List<VetroHoster>>> =
+        runPlaybackProviderCascade(
+            calls,
+            // Как в поиске: появилось рабочее видео — остальным даём ещё немного (озвучки у Kodik и
+            // AniLiberty приходят вместе), но не ждём самого медленного до его таймаута в 24 с.
+            graceAfterHitMs = PLAYABLE_GRACE_MS,
+            isHit = { it.hasPlayableVideo() },
+        ).map { learnFrom(it, language) }.onEach { attempt ->
+            when {
+                attempt.skipped -> Log.i(TAG, "${attempt.label} released early (playable video already found)")
+                attempt.timedOut -> Log.w(TAG, "${attempt.label} timed out")
+                attempt.failed -> Log.w(TAG, "${attempt.label} failed")
+            }
+            val hosters = attempt.value.orEmpty()
+            val playable = hosters.sumOf { hoster ->
+                hoster.videos.orEmpty().count { isPlayableVetroVideoUrl(it.url) }
+            }
+            Log.i(
+                TAG,
+                "${attempt.label} → ${hosters.size} hoster(s), " +
+                    "$playable playable video(s), ${attempt.elapsedMs}ms",
+            )
+        }
+
+    /**
+     * Исход вызова - в рейтинг источников, а видео - с пометкой, чей провайдер их отдал (плеер по
+     * ней припишет буферизацию и старт нужному источнику). Пустой ответ без ошибки значит
+     * "у источника нет такого тайтла", а не поломку, поэтому не наказывается.
+     */
+    private suspend fun learnFrom(
+        attempt: SourceAttempt<List<VetroHoster>>,
+        language: AppLanguage,
+    ): SourceAttempt<List<VetroHoster>> {
+        val provider = SourceIntelligence.providerKey(attempt.label) ?: return attempt
+        val hosters = attempt.value.orEmpty()
+        val playable = hosters.hasPlayableVideo()
+        when {
+            playable -> runCatching { intelligence?.recordResolve(provider, language, ok = true, latencyMs = attempt.elapsedMs) }
+            attempt.failed -> runCatching { intelligence?.recordResolve(provider, language, ok = false, latencyMs = attempt.elapsedMs) }
+        }
+        if (!playable) return attempt
+        val tagged = hosters.map { hoster ->
+            hoster.copy(videos = hoster.videos?.map { video -> video.copy(providerKey = video.providerKey ?: provider) })
+        }
+        return attempt.copy(value = tagged)
+    }
+
+    suspend fun resolveBestVideo(hosters: List<VetroHoster>): VetroVideo? {
+        val flat = hosters.flatMap { it.videos.orEmpty() }
+        flat.firstOrNull { it.isPreferred }?.let { return it }
+        return flat.maxByOrNull { it.resolution ?: 0 }
+    }
+
+    companion object {
+        private const val TAG = "SourceEngine"
+        private const val EXACT_SOURCE_TIMEOUT_MS = 8_000L
+        private const val SOURCE_TIMEOUT_MS = 12_000L
+        private const val KODIK_SOURCE_TIMEOUT_MS = 24_000L
+        private const val EN_SOURCE_TIMEOUT_MS = 20_000L
+        private const val DIRECT_TIMEOUT_MS = 5_000L
+        /** Сколько ждём остальных источников после первого рабочего видео. */
+        private const val PLAYABLE_GRACE_MS = 7_000L
+        private const val PERSONAL_SOURCE_TIMEOUT_MS = 20_000L
+    }
+
+    private data class SourceBatch(
+        val hosters: List<VetroHoster>,
+        val hadFailure: Boolean,
+    )
+}
