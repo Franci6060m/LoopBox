@@ -56,7 +56,7 @@ android {
             }
         }
 
-        buildConfigField("String", "GITHUB_OWNER", "\"loopbox\"")
+        buildConfigField("String", "GITHUB_OWNER", "\"Franci6060m\"")
         buildConfigField("String", "GITHUB_REPO", "\"LoopBox\"")
         buildConfigField("boolean", "AUDIOBOOKS_ENABLED", "true")
         // Адрес коллектора (Cloudflare Worker, tools/microml-collector). Сбор доступен только в сборке с подписью автора и только после согласия пользователя.
