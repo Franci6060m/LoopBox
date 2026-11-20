@@ -479,22 +479,6 @@ fun SettingsScreen(
                             rows = listOf(
                                 {
                                     IosRow(
-                                        title = if (uiState.language == AppLanguage.RU) "Дополнительные источники" else "Additional sources",
-                                        subtitle = if (uiState.language == AppLanguage.RU) {
-                                            "WebDAV, Jellyfin и Emby"
-                                        } else {
-                                            "WebDAV, Jellyfin and Emby"
-                                        },
-                                        isDark = isDark,
-                                        icon = Icons.Filled.PlayCircle,
-                                        help = SettingHelpBinding(SettingHelpIds.PLAYBACK_SOURCES),
-                                        iconWell = false,
-                                        showChevron = true,
-                                        onClick = { performHaptic(view, Haptic.Light); activeSheet = SettingsOverlaySheet.PlaybackSources },
-                                    )
-                                },
-                                {
-                                    IosRow(
                                         title = strings.languageCardTitle,
                                         isDark = isDark,
                                         iconRes = R.drawable.hugeicon_language,
@@ -542,40 +526,6 @@ fun SettingsScreen(
                         IosListGroup(
                             isDark = isDark,
                             rows = listOf(
-                                {
-                                    IosRow(
-                                        title = strings.cloudSettingsTitle,
-                                        subtitle = strings.cloudSettingsSubtitle,
-                                        isDark = isDark,
-                                        iconRes = R.drawable.hugeicon_account,
-                                        help = SettingHelpBinding(SettingHelpIds.CLOUD),
-                                        iconWell = false,
-                                        showChevron = true,
-                                        onClick = { performHaptic(view, Haptic.Light); activeSheet = SettingsOverlaySheet.Cloud },
-                                    )
-                                },
-                                *(if (onOpenSyncPanel != null) {
-                                    // Панель подключения: в рабочей области она уехала из
-                                    // верхнего дока сюда. Подписи зашиты рядом — в UiStrings
-                                    // свободных полей почти не осталось (252 из 254).
-                                    val ru = uiState.language == AppLanguage.RU
-                                    arrayOf<@Composable () -> Unit>({
-                                        IosRow(
-                                            title = if (ru) "Синхронизация" else "Sync",
-                                            subtitle = if (ru) {
-                                                "Аккаунты, списки и проверка новых серий"
-                                            } else {
-                                                "Accounts, lists and episode checks"
-                                            },
-                                            isDark = isDark,
-                                            icon = Icons.Filled.Sync,
-                                            help = SettingHelpBinding(SettingHelpIds.SYNC),
-                                            iconWell = false,
-                                            showChevron = true,
-                                            onClick = { performHaptic(view, Haptic.Light); onOpenSyncPanel() },
-                                        )
-                                    })
-                                } else emptyArray()),
                                 {
                                     IosRow(
                                         title = aiConnectStrings.tileTitle,
@@ -640,18 +590,6 @@ fun SettingsScreen(
                                                 },
                                             )
                                         },
-                                    )
-                                },
-                                {
-                                    IosRow(
-                                        title = strings.contactTitle,
-                                        subtitle = strings.contactSubtitle,
-                                        isDark = isDark,
-                                        iconRes = R.drawable.hugeicon_contact,
-                                        help = SettingHelpBinding(SettingHelpIds.CONTACT),
-                                        iconWell = false,
-                                        showChevron = true,
-                                        onClick = { performHaptic(view, Haptic.Light); activeSheet = SettingsOverlaySheet.Contact },
                                     )
                                 },
                             ),
@@ -728,32 +666,6 @@ fun SettingsScreen(
                                         },
                                     )
                                 },
-                                {
-                                    IosRow(
-                                        title = strings.donationCardTitle,
-                                        subtitle = strings.donationCardSubtitle,
-                                        isDark = isDark,
-                                        iconRes = R.drawable.hugeicon_donate,
-                                        help = SettingHelpBinding(SettingHelpIds.DONATION),
-                                        iconWell = false,
-                                        showChevron = true,
-                                        onClick = {
-                                            performHaptic(view, Haptic.Light)
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, DONATION_URL.toUri()))
-                                        },
-                                    )
-                                },
-                                {
-                                    IosRow(
-                                        title = strings.devSectionTitle,
-                                        isDark = isDark,
-                                        iconRes = R.drawable.hugeicon_developer,
-                                        iconWell = false,
-                                        chevronExpanded = showDeveloperSection,
-                                        onClick = {
-                                            performHaptic(view, Haptic.Light)
-                                            showDeveloperSection = !showDeveloperSection
-                                        },
                                     )
                                 },
                             ),

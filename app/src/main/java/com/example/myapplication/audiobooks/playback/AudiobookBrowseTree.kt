@@ -29,7 +29,7 @@ class AudiobookBrowseTree(
     private val ru: () -> Boolean,
 ) {
     /** Корень каталога; [recent] - клиент просит «что играло последним» (Auto при подключении к машине). */
-    fun root(recent: Boolean): MediaItem = folder(if (recent) RECENT_ID else ROOT_ID, "Vetro")
+    fun root(recent: Boolean): MediaItem = folder(if (recent) RECENT_ID else ROOT_ID, "LoopBox")
 
     suspend fun children(parentId: String): List<MediaItem> = when (parentId) {
         ROOT_ID -> listOf(continueFolder(), libraryFolder())

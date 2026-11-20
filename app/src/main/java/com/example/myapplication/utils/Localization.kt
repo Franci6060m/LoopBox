@@ -4,7 +4,7 @@ import com.example.myapplication.data.models.*
 import com.example.myapplication.network.AppLanguage
 
 val RussianStrings = UiStrings(
-    appName = "Vetro",
+    appName = "LoopBox",
     searchPlaceholder = "Поиск в коллекции...",
     newestFirst = "Сначала новые",
     oldestFirst = "Сначала старые",
@@ -105,7 +105,7 @@ val RussianStrings = UiStrings(
     nottifLastSyncSub = "Время обновления",
     nottifStatusTitle = "Статус",
     nottifStatusSub = "Активный канал",
-    nottifAccountTitle = "Мой Vetro",
+    nottifAccountTitle = "Мой LoopBox",
     nottifLogoutConfirmTitle = "Выйти из аккаунта?",
     nottifLogoutConfirmBody = "Локальные данные будут удалены. Вы будете перенаправлены на экран приветствия.",
     nottifSyncNow = "Синх.",
@@ -259,7 +259,7 @@ val RussianStrings = UiStrings(
 )
 
 val EnglishStrings = UiStrings(
-    appName = "Vetro",
+    appName = "LoopBox",
     searchPlaceholder = "Search collection...",
     newestFirst = "Newest First",
     oldestFirst = "Oldest First",
@@ -360,7 +360,7 @@ val EnglishStrings = UiStrings(
     nottifLastSyncSub = "Last updated time",
     nottifStatusTitle = "Status",
     nottifStatusSub = "Active signal",
-    nottifAccountTitle = "My Vetro",
+    nottifAccountTitle = "My LoopBox",
     nottifLogoutConfirmTitle = "Log out?",
     nottifLogoutConfirmBody = "Local data will be cleared. You will be redirected to the welcome screen.",
     nottifSyncNow = "Sync Now",
@@ -964,18 +964,18 @@ data class SupportStrings(
 )
 
 private val RussianSupportStrings = SupportStrings(
-    title = "Нравится Vetro?",
-    body = "Vetro — независимый проект. Если вам нравится им пользоваться, поддержите разработку или поставьте звезду на GitHub.",
-    bodyDonateOnly = "Vetro — независимый проект. Если вам нравится им пользоваться, поддержите разработку.",
+    title = "Нравится LoopBox?",
+    body = "LoopBox — независимый проект. Если вам нравится им пользоваться, поддержите разработку или поставьте звезду на GitHub.",
+    bodyDonateOnly = "LoopBox — независимый проект. Если вам нравится им пользоваться, поддержите разработку.",
     donate = "Поддержать разработку",
     github = "Звезда на GitHub",
     later = "Не сейчас",
 )
 
 private val EnglishSupportStrings = SupportStrings(
-    title = "Enjoying Vetro?",
-    body = "Vetro is an independent project. If you enjoy using it, consider supporting its development or giving it a star on GitHub.",
-    bodyDonateOnly = "Vetro is an independent project. If you enjoy using it, consider supporting its development.",
+    title = "Enjoying LoopBox?",
+    body = "LoopBox is an independent project. If you enjoy using it, consider supporting its development or giving it a star on GitHub.",
+    bodyDonateOnly = "LoopBox is an independent project. If you enjoy using it, consider supporting its development.",
     donate = "Support development",
     github = "Star on GitHub",
     later = "Not now",

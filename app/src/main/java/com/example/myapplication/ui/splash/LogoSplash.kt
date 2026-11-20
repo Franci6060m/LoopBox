@@ -81,11 +81,39 @@ internal fun LogoSplashCanvas(
     colors: LogoSplashColors,
     modifier: Modifier = Modifier,
 ) {
-    val art = rememberLogoSplashArt()
-    val cache = remember { LogoGeoCache() }
     Canvas(modifier.fillMaxSize()) {
-        val designHeight = size.height / (size.width / DesignWidth)
-        drawLogoSplash(timeSec(), art, colors, cache.get(designHeight))
+        val t = timeSec()
+        val a = ((t - 0.2f) / 0.9f).coerceIn(0f, 1f)
+        val k = 0.85f + 0.15f * a
+        val cx = size.width / 2f
+        val cy = size.height * 0.42f
+        val s = min(size.width, size.height) * 0.30f * k
+        val orange = Color(0xFFE85002).copy(alpha = a)
+        val cream = Color(0xFFF3EAD8).copy(alpha = a)
+        drawRoundRect(
+            color = cream,
+            topLeft = Offset(cx - s, cy - s),
+            size = androidx.compose.ui.geometry.Size(2f * s, 2f * s),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(s * 0.5f),
+            style = Stroke(width = s * 0.16f),
+        )
+        val r = s * 0.45f
+        drawArc(
+            color = orange,
+            startAngle = 0f,
+            sweepAngle = 270f,
+            useCenter = false,
+            topLeft = Offset(cx - r, cy - r),
+            size = androidx.compose.ui.geometry.Size(2f * r, 2f * r),
+            style = Stroke(width = s * 0.13f, cap = StrokeCap.Round),
+        )
+        val head = Path().apply {
+            moveTo(cx, cy - r - s * 0.22f)
+            lineTo(cx + s * 0.26f, cy - r)
+            lineTo(cx, cy - r + s * 0.22f)
+            close()
+        }
+        drawPath(head, orange)
     }
 }
 

@@ -164,9 +164,9 @@ private fun InstalledSource.toSummary(): CustomSourceSummary = CustomSourceSumma
     key = key,
     displayName = displayName,
     kindLabel = when (definition) {
-        is InstalledSourceDefinition.Manifest -> "Vetro"
+        is InstalledSourceDefinition.Manifest -> "LoopBox"
         is InstalledSourceDefinition.Stremio -> "Stremio"
-        is InstalledSourceDefinition.Package -> "Vetro ${definition.pkg.version}"
+        is InstalledSourceDefinition.Package -> "LoopBox ${definition.pkg.version}"
     },
     enabled = enabled,
     sourceUrl = sourceUrl,

@@ -80,7 +80,7 @@ class AppLockManager private constructor(application: Application) : Application
             isClickable = true
             isFocusable = true
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            contentDescription = "Vetro"
+            contentDescription = "LoopBox"
         }
         (activity.window.decorView as ViewGroup).addView(shield,
             ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
