@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.clickable
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -130,6 +131,7 @@ fun ApiSearchResultCard(
             .clip(RoundedCornerShape(24.dp))
             .background(cardBg)
             .border(1.dp, borderStroke, RoundedCornerShape(24.dp))
+            .clickable { if (!isAdded && !isLoading) onAddClick() }
     ) {
         Row(
             modifier = Modifier

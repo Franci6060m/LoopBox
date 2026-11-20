@@ -44,7 +44,7 @@ import java.util.Locale
 class AppLockActivity : FragmentActivity() {
     private val manager by lazy { AppLockManager.get(this) }
     private lateinit var prompt: BiometricPrompt
-    private var ru by mutableStateOf(Locale.getDefault().language == "ru")
+    private var ru by mutableStateOf(false)
     private var theme by mutableStateOf(AppTheme.SYSTEM)
     private var message by mutableStateOf<String?>(null)
     private var running by mutableStateOf(false)

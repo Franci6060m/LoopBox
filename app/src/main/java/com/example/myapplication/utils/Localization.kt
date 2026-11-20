@@ -583,12 +583,7 @@ fun getNotificationStrings(lang: AppLanguage): NotificationStrings = when (lang)
 }
 
 /** Язык интерфейса по системной локали: ru → RU, иначе EN. */
-fun systemAppLanguage(): AppLanguage =
-    if (java.util.Locale.getDefault().language.equals("ru", ignoreCase = true)) {
-        AppLanguage.RU
-    } else {
-        AppLanguage.EN
-    }
+fun systemAppLanguage(): AppLanguage = AppLanguage.EN
 
 /** Отдельно от [UiStrings]: у data class уже ~251 поле, лимит JVM — 255 параметров конструктора. */
 data class DevRepairDbStrings(

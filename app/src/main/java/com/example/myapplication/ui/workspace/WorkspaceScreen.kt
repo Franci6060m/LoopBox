@@ -259,6 +259,13 @@ fun WorkspaceScreen(
         ) { index ->
             Box(modifier = Modifier.workspacePageMotion(pagerState, index)) {
             when (WorkspacePage.ofIndex(index)) {
+                WorkspacePage.BROWSE -> com.example.myapplication.loopbox.BrowseScreen(
+                    bottomInset = dockInset,
+                    onOpenInLibrary = { id ->
+                        navController.navigate(com.example.myapplication.ui.navigation.DetailsRoute(animeId = id))
+                    },
+                )
+
                 WorkspacePage.HOME -> HomeScreen(
                     navController = navController,
                     viewModel = homeViewModel,

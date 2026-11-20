@@ -57,7 +57,7 @@ class AudiobookPlaybackService : MediaLibraryService() {
     private val recoveredChapters: com.example.myapplication.audiobooks.chapters.RecoveredChapterStore by inject()
     /** Каталог для Android Auto: «Продолжить» и «Библиотека», запуск книги по идентификатору. */
     private val browseTree by lazy {
-        AudiobookBrowseTree(repository, chain) { Locale.getDefault().language == "ru" }
+        AudiobookBrowseTree(repository, chain) { false }
     }
     /** Книга, чьё «избранное» сейчас отражает сердце в системной карточке. */
     private var favoriteWork: String? = null
@@ -242,7 +242,7 @@ class AudiobookPlaybackService : MediaLibraryService() {
      * ними −15 / ▶ / +30. Иконка скорости показывает текущую скорость, сердце — состояние книги.
      */
     private fun mediaButtons(): List<CommandButton> {
-        val ru = Locale.getDefault().language == "ru"
+        val ru = false
         val speed = if (::player.isInitialized) player.playbackParameters.speed else 1f
         return buildList {
             add(

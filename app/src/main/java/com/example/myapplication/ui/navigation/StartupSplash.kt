@@ -101,7 +101,7 @@ internal fun StartupSplashOverlay(
         onPickLegacyFolder = { legacyFolderLauncher.launch(null) },
         onSkipLegacyFolder = { splashViewModel.skipLegacyFolderMigration() },
         onBuildContent = { next ->
-            state.nextRoute = if (next == StartupSplashState.HOME) StartupSplashState.HOME else StartupSplashState.WELCOME
+            state.nextRoute = StartupSplashState.HOME
         },
         contentReady = contentReady,
         onSplashComplete = { state.visible = false },

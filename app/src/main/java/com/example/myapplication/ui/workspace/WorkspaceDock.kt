@@ -133,7 +133,8 @@ private fun WorkspacePageIcon(page: WorkspacePage, tint: Color, contentDescripti
     // Набор иконок дока — один и тот же файл на раздел, а не «что-то похожее из material»:
     // так все четыре гнезда нарисованы в одном стиле и одной толщиной штриха.
     val painter = when (page) {
-        WorkspacePage.HOME -> R.drawable.dock_home_24
+        WorkspacePage.BROWSE -> R.drawable.dock_home_24
+        WorkspacePage.HOME -> R.drawable.dock_library_24
         WorkspacePage.SETTINGS -> R.drawable.dock_settings_24
         WorkspacePage.BOOKS -> R.drawable.dock_books_24
     }
@@ -153,8 +154,9 @@ private fun WorkspacePage.label(language: AppLanguage): String {
     val ru = language == AppLanguage.RU
     return when (this) {
         WorkspacePage.BOOKS -> if (ru) "Книги" else "Books"
-        WorkspacePage.HOME -> if (ru) "Главная" else "Home"
-        WorkspacePage.SETTINGS -> if (ru) "Настройки" else "Settings"
+        WorkspacePage.BROWSE -> "Home"
+        WorkspacePage.HOME -> "Library"
+        WorkspacePage.SETTINGS -> "Me"
     }
 }
 

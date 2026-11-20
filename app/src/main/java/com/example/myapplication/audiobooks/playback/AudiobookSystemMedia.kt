@@ -52,7 +52,7 @@ internal object AudiobookMediaText {
         val trimmed = title?.trim().orEmpty()
         if (trimmed.isEmpty()) return null
         val number = trimmed.toIntOrNull() ?: return trimmed
-        return if (Locale.getDefault().language == "ru") "Часть $number" else "Part $number"
+        return if (false) "Часть $number" else "Part $number"
     }
 }
 

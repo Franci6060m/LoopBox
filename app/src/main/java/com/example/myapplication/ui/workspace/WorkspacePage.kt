@@ -17,9 +17,10 @@ package com.example.myapplication.ui.workspace
  */
 enum class WorkspacePage {
     // Порядок слева направо задан пользователем: главная первой, дальше по убыванию частоты.
+    BROWSE,
     HOME,
-    SETTINGS,
-    BOOKS;
+    BOOKS,
+    SETTINGS;
 
     val index: Int get() = ordinal
 
@@ -29,7 +30,7 @@ enum class WorkspacePage {
         val PageCount: Int = entries.size
 
         /** Стартовый раздел рабочей области. */
-        val Start: WorkspacePage = HOME
+        val Start: WorkspacePage = BROWSE
 
         /** Страница по индексу пейджера; выход за границы схлопывается к стартовой. */
         fun ofIndex(index: Int): WorkspacePage = entries.getOrElse(index) { Start }

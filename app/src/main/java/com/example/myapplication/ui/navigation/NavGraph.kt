@@ -149,7 +149,7 @@ fun AppNavGraph(
         val nextRoute = startupSplash.nextRoute
         if (nextRoute != null) NavHost(
             navController = navController,
-            startDestination = if (nextRoute == StartupSplashState.HOME) HomeRoute else WelcomeRoute,
+            startDestination = HomeRoute,
         ) {
             composable<WelcomeRoute>(
                 enterTransition = { fadeIn(animationSpec = MotionTokens.tweenEmphasized()) },

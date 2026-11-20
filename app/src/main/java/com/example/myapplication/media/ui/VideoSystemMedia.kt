@@ -84,7 +84,7 @@ internal class VideoMediaSession(
     }
 
     private fun buttons(hasPrevious: Boolean, hasNext: Boolean): List<CommandButton> {
-        val ru = java.util.Locale.getDefault().language == "ru"
+        val ru = false
         return buildList {
             if (hasPrevious) {
                 add(
@@ -144,7 +144,7 @@ internal class VideoMediaSession(
 
     private fun ensureChannel() {
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-        val ru = java.util.Locale.getDefault().language == "ru"
+        val ru = false
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, if (ru) "Воспроизведение видео" else "Video playback", NotificationManager.IMPORTANCE_LOW)
                 .apply { setShowBadge(false) },
@@ -188,7 +188,7 @@ internal class VideoMediaSession(
 
         /** Вторая строка карточки: «S2 E5» у сериала/аниме, «Фильм» у фильма. */
         fun line(season: Int?, episode: Int?, isMovie: Boolean): String? {
-            val ru = java.util.Locale.getDefault().language == "ru"
+            val ru = false
             if (isMovie) return if (ru) "Фильм" else "Movie"
             val e = episode ?: return null
             return if (season != null) "S$season E$e" else if (ru) "Серия $e" else "Episode $e"
