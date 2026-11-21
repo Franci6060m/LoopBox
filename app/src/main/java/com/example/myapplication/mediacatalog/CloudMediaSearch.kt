@@ -47,11 +47,22 @@ class CloudMediaSearch(
         else -> emptyList()
     }
 
-    suspend fun search(query: String, contentType: AppContentType, language: AppLanguage, limit: Int = 20): List<ApiSearchResult> {
+    /**
+     * Return a wider first page so the existing search surface can show more catalogue matches
+     * without changing its layout or making multiple requests while the user types.
+     */
+    suspend fun search(
+        query: String,
+        contentType: AppContentType,
+        language: AppLanguage,
+        limit: Int = DEFAULT_SEARCH_LIMIT,
+    ): List<ApiSearchResult> {
         val kinds = kindsOf(contentType)
         if (kinds.isEmpty()) return emptyList()
         return withContext(Dispatchers.IO) {
-            val lists = coroutineScope { kinds.map { kind -> async { fetch(query, kind, contentType, language, limit) } }.awaitAll() }
+            val lists = coroutineScope {
+                kinds.map { kind -> async { fetch(query, kind, contentType, language, limit) } }.awaitAll()
+            }
             interleave(lists).take(limit)
         }
     }
@@ -59,7 +70,10 @@ class CloudMediaSearch(
     private fun fetch(query: String, kind: String, contentType: AppContentType, language: AppLanguage, limit: Int): List<ApiSearchResult> =
         try {
             val url = "$apiV1/find".toHttpUrlOrNull()?.newBuilder()
-                ?.addQueryParameter("q", query)?.addQueryParameter("kind", kind)?.addQueryParameter("limit", limit.toString())?.build()
+                ?.addQueryParameter("q", query)
+                ?.addQueryParameter("kind", kind)
+                ?.addQueryParameter("limit", limit.toString())
+                ?.build()
             if (url == null) {
                 emptyList()
             } else {
@@ -75,7 +89,8 @@ class CloudMediaSearch(
         }
 
     internal fun parse(body: String, contentType: AppContentType, language: AppLanguage): List<ApiSearchResult> =
-        json.parseToJsonElement(body).jsonObject["items"]?.jsonArray.orEmpty().mapNotNull { toResult(it.jsonObject, contentType, language) }
+        json.parseToJsonElement(body).jsonObject["items"]?.jsonArray.orEmpty()
+            .mapNotNull { toResult(it.jsonObject, contentType, language) }
 
     /**
      * Запись облака в тот же вид, что дают прежние источники: по id в других базах (AniList, Shikimori, MAL, TMDB) результат открывается и
@@ -144,6 +159,7 @@ class CloudMediaSearch(
     }
 
     companion object {
+        private const val DEFAULT_SEARCH_LIMIT = 50
         private const val TIMEOUT_MS = 2500L
 
         /** Списки баз по очереди, лучший из каждой первым: порядок внутри базы сохраняется. */
