@@ -22,6 +22,8 @@ data class BrowseItem(
     val previewUrl: String? = null,
     /** Page where a novel can be read. */
     val readUrl: String? = null,
+    /** Plain-text file of a public-domain book, read by the app's own reader. */
+    val textUrl: String? = null,
 )
 
 data class BrowseRow(val title: String, val items: List<BrowseItem>)

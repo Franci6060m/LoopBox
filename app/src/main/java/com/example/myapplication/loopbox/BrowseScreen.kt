@@ -1,7 +1,7 @@
 package com.example.myapplication.loopbox
 
+import android.app.DownloadManager
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
@@ -22,6 +22,19 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.myapplication.data.repository.GenreRepository
+import com.example.myapplication.network.AppLanguage
+import com.example.myapplication.ui.home.recommendations.DiscoveryCard
+import com.example.myapplication.ui.home.recommendations.RecommendationsSheet
+import com.example.myapplication.ui.home.recommendations.RecommendationsUiState
+import com.example.myapplication.ui.home.recommendations.RecommendationsViewModel
+import com.example.myapplication.ui.home.recommendations.getRecommendationsStrings
+import com.example.myapplication.data.repository.AnimeRepository
+import com.example.myapplication.network.ApiSearchResult
+import com.example.myapplication.network.AppContentType
+import org.koin.androidx.compose.koinViewModel
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
@@ -152,11 +165,22 @@ fun BrowseScreen(
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
-    var searching by rememberSaveable { mutableStateOf(false) }
+    var searching by BrowseSearchBus::active
+    DisposableEffect(Unit) { onDispose { BrowseSearchBus.active = false } }
+    val recsViewModel: RecommendationsViewModel = koinViewModel()
+    val recsState by recsViewModel.uiState.collectAsStateWithLifecycle()
+    val recsStrings = getRecommendationsStrings(AppLanguage.EN)
+    val genreRepository: GenreRepository = koinInject()
+    var showRecs by remember { mutableStateOf(false) }
+    val animeRepository: AnimeRepository = koinInject()
     var query by rememberSaveable { mutableStateOf("") }
     var results by remember { mutableStateOf<List<BrowseItem>>(emptyList()) }
     var selected by remember { mutableStateOf<BrowseItem?>(null) }
     var videoUrls by remember { mutableStateOf<List<String>?>(null) }
+    var readerUrl by remember { mutableStateOf<String?>(null) }
+    var novel by remember { mutableStateOf<BrowseItem?>(null) }
+    val modePrefs = remember { context.getSharedPreferences("loopbox_browse", Context.MODE_PRIVATE) }
+    var downloadMode by remember { mutableStateOf(modePrefs.getString("mode", "stream") == "download") }
     val music = remember { MusicController(context) }
     DisposableEffect(music) { onDispose { music.release() } }
 
@@ -177,7 +201,26 @@ fun BrowseScreen(
             results = emptyList()
         } else {
             delay(400)
-            results = BrowseRepository.search(tab, query)
+            // Both engines: Browse's free sources first, then the app's own progressive catalogue search.
+            val own = BrowseRepository.search(tab, query)
+            results = own
+            val type = when (tab) {
+                BrowseTab.Movies -> AppContentType.MOVIE
+                BrowseTab.TV -> AppContentType.SERIES
+                else -> null
+            }
+            if (type != null) {
+                try {
+                    animeRepository.searchApiProgressive(query.trim(), type, AppLanguage.EN).collect { list ->
+                        val extra = list.mapNotNull { r -> apiResultToItem(r, tab) }
+                        results = (own + extra).distinctBy { it.title.lowercase() }
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // The free-source results stay on screen.
+                }
+            }
         }
     }
 
@@ -190,8 +233,17 @@ fun BrowseScreen(
                         if (tracks.isEmpty()) {
                             Toast.makeText(context, "No playable file found", Toast.LENGTH_SHORT).show()
                         } else {
-                            val items = tracks.mapIndexed { i, t -> item.copy(id = item.id + "#" + i, title = t.first, subtitle = item.title) }
-                            music.play(items, tracks.map { it.second })
+                            if (downloadMode) {
+                                tracks.forEachIndexed { i, t ->
+                                    val ext = t.second.substringAfterLast('.', "mp3").take(4)
+                                    val name = t.first.replace(Regex("[^A-Za-z0-9 ._-]"), "").trim().ifBlank { "track ${i + 1}" } + "." + ext
+                                    enqueueDownload(context, t.second, name, android.os.Environment.DIRECTORY_MUSIC)
+                                }
+                                Toast.makeText(context, "Downloading ${tracks.size} track(s)", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val items = tracks.mapIndexed { i, t -> item.copy(id = item.id + "#" + i, title = t.first, subtitle = item.title) }
+                                music.play(items, tracks.map { it.second })
+                            }
                         }
                     } else {
                         val playable = siblings.filter { it.previewUrl != null }
@@ -218,6 +270,35 @@ fun BrowseScreen(
                     onTab = { tabIndex = it; query = "" },
                     onSearch = { searching = !searching; if (!searching) query = "" },
                 )
+            }
+            val recsReady = recsState as? RecommendationsUiState.Ready
+            if (recsReady != null && recsReady.items.isNotEmpty() && !searching) {
+                item(key = "discovery_card") {
+                    DiscoveryCard(
+                        state = recsReady,
+                        strings = recsStrings,
+                        onClick = { showRecs = true },
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+            }
+            if (tab != BrowseTab.Novels) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text("Free files:", color = Muted, fontSize = 13.sp)
+                        OutlinedButton(
+                            onClick = {
+                                downloadMode = !downloadMode
+                                modePrefs.edit().putString("mode", if (downloadMode) "download" else "stream").apply()
+                            },
+                            border = BorderStroke(1.dp, Color(0xFF3A3A3C)),
+                        ) { Text(if (downloadMode) "Download" else "Stream", color = Fg) }
+                    }
+                }
             }
             if (searching) {
                 item {
@@ -306,10 +387,150 @@ fun BrowseScreen(
             item = item,
             onDismiss = { selected = null },
             onPlay = { urls -> videoUrls = urls },
+            onRead = { b -> if (b.textUrl != null) novel = b else readerUrl = b.readUrl },
+            downloadMode = downloadMode,
+            onModeChange = { downloadMode = it; modePrefs.edit().putString("mode", if (it) "download" else "stream").apply() },
             onOpenInLibrary = { id -> selected = null; onOpenInLibrary(id) },
         )
     }
     videoUrls?.let { urls -> VideoDialog(urls) { videoUrls = null } }
+    readerUrl?.let { url -> ReaderDialog(url) { readerUrl = null } }
+    novel?.let { b -> NovelReader(b) { novel = null } }
+    if (showRecs) {
+        RecommendationsSheet(
+            state = recsState,
+            strings = recsStrings,
+            language = AppLanguage.EN,
+            genreRepository = genreRepository,
+            onAdd = { item -> recsViewModel.addToCollection(item) },
+            onRate = { item, verdict -> recsViewModel.rate(item, verdict) },
+            onUndoRate = { item -> recsViewModel.undoRate(item) },
+            onLoadMore = { recsViewModel.loadMore() },
+            onDismiss = {
+                showRecs = false
+                recsViewModel.onSheetClosed()
+            },
+        )
+    }
+}
+
+private fun apiResultToItem(r: ApiSearchResult, tab: BrowseTab): BrowseItem? {
+    if (r.title.isBlank()) return null
+    return BrowseItem(
+        id = "api" + (r.externalId ?: r.title),
+        tab = tab,
+        title = r.title,
+        subtitle = r.genres.take(2).joinToString(", "),
+        imageUrl = r.posterUrl,
+        description = r.description,
+    )
+}
+
+private fun enqueueDownload(context: Context, url: String, fileName: String, dir: String) {
+    val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    dm.enqueue(
+        DownloadManager.Request(Uri.parse(url))
+            .setTitle(fileName)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalFilesDir(context, dir, fileName),
+    )
+}
+
+/** The app's own text reader: fetches the book, shows it page-less with adjustable size, remembers the place. */
+@Composable
+private fun NovelReader(item: BrowseItem, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("loopbox_reader", Context.MODE_PRIVATE) }
+    var paragraphs by remember(item.id) { mutableStateOf<List<String>?>(null) }
+    var failed by remember(item.id) { mutableStateOf(false) }
+    var fontSize by remember { mutableIntStateOf(prefs.getInt("font", 18)) }
+    val listState = rememberLazyListState()
+    var restored by remember(item.id) { mutableStateOf(false) }
+
+    LaunchedEffect(item.id) {
+        try {
+            paragraphs = BrowseRepository.bookParagraphs(item.textUrl!!).ifEmpty { null }
+            failed = paragraphs == null
+        } catch (e: Exception) {
+            failed = true
+        }
+    }
+    LaunchedEffect(paragraphs) {
+        val p = paragraphs ?: return@LaunchedEffect
+        val saved = prefs.getInt("pos_" + item.id, 0).coerceIn(0, (p.size - 1).coerceAtLeast(0))
+        listState.scrollToItem(saved)
+        restored = true
+    }
+    LaunchedEffect(listState.firstVisibleItemIndex, restored) {
+        if (restored) prefs.edit().putInt("pos_" + item.id, listState.firstVisibleItemIndex).apply()
+    }
+
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxSize().background(Color(0xFF111111)).statusBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(item.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (item.subtitle.isNotBlank()) Text(item.subtitle, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                OutlinedButton(onClick = { fontSize = (fontSize - 2).coerceAtLeast(12); prefs.edit().putInt("font", fontSize).apply() }) { Text("A−", color = Fg) }
+                Spacer(Modifier.width(6.dp))
+                OutlinedButton(onClick = { fontSize = (fontSize + 2).coerceAtMost(32); prefs.edit().putInt("font", fontSize).apply() }) { Text("A+", color = Fg) }
+                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White) }
+            }
+            val p = paragraphs
+            when {
+                failed -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Couldn't load this book. Check your connection.", color = Muted)
+                }
+                p == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Accent)
+                }
+                else -> LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    items(p.size) { i ->
+                        Text(p[i], color = Color(0xFFDDDDDD), fontSize = fontSize.sp, lineHeight = (fontSize * 1.6f).sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Reads a book inside the app: Project Gutenberg text, or an Internet Archive / Open Library page. */
+@Composable
+private fun ReaderDialog(url: String, onClose: () -> Unit) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(Bg)) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize().statusBarsPadding(),
+                factory = { ctx ->
+                    android.webkit.WebView(ctx).apply {
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        setBackgroundColor(android.graphics.Color.parseColor("#111111"))
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun onPageFinished(view: android.webkit.WebView?, u: String?) {
+                                if (u != null && u.contains("gutenberg.org")) {
+                                    view?.evaluateJavascript(
+                                        "document.body.style.cssText='background:#111;color:#ddd;max-width:42em;margin:0 auto;padding:16px;font-size:18px;line-height:1.6';",
+                                        null,
+                                    )
+                                }
+                            }
+                        }
+                        loadUrl(url)
+                    }
+                },
+            )
+            IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding()) {
+                Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
+            }
+        }
+    }
 }
 
 @Composable
@@ -496,6 +717,9 @@ private fun DetailSheet(
     item: BrowseItem,
     onDismiss: () -> Unit,
     onPlay: (List<String>) -> Unit,
+    onRead: (BrowseItem) -> Unit,
+    downloadMode: Boolean,
+    onModeChange: (Boolean) -> Unit,
     onOpenInLibrary: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -528,11 +752,12 @@ private fun DetailSheet(
                 val id = UUID.randomUUID().toString()
                 val file = item.imageUrl?.let { images.saveImageFromUrl(it, id).getOrNull() }
                 val movie = item.tab == BrowseTab.Movies
+                val epCount = if (movie) 1 else (BrowseRepository.tvEpisodeCount(item.title) ?: 1)
                 local.insertAnime(
                     Anime(
                         id = id,
                         title = item.title,
-                        episodes = 1,
+                        episodes = epCount,
                         rating = 0f,
                         imageFileName = file,
                         orderIndex = 0,
@@ -573,16 +798,44 @@ private fun DetailSheet(
                 Text(item.description, color = Fg, fontSize = 14.sp, maxLines = 7, overflow = TextOverflow.Ellipsis)
             }
             if (isVideo) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Mode", color = Muted, fontSize = 13.sp)
+                    OutlinedButton(
+                        onClick = { onModeChange(!downloadMode) },
+                        border = BorderStroke(1.dp, Color(0xFF3A3A3C)),
+                    ) { Text(if (downloadMode) "Download" else "Stream", color = Fg) }
+                }
                 when {
                     lookingUp -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         CircularProgressIndicator(Modifier.size(18.dp), color = Accent, strokeWidth = 2.dp)
                         Text("Looking for a free full version…", color = Muted, fontSize = 13.sp)
                     }
-                    fullParts != null -> Button(
+                    fullParts != null && !downloadMode -> Button(
                         onClick = { onPlay(fullParts!!) },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Accent),
                     ) { Text("▶ Play full" + if (fullParts!!.size > 1) " (${fullParts!!.size} parts)" else "", fontWeight = FontWeight.Bold) }
+                    fullParts != null -> Button(
+                        onClick = {
+                            try {
+                                val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                fullParts!!.forEachIndexed { i, url ->
+                                    val name = item.title.replace(Regex("[^A-Za-z0-9 ._-]"), "").trim().ifBlank { "video" } +
+                                        (if (fullParts!!.size > 1) " part ${i + 1}" else "") + ".mp4"
+                                    val req = DownloadManager.Request(Uri.parse(url))
+                                        .setTitle(name)
+                                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                        .setDestinationInExternalFilesDir(context, android.os.Environment.DIRECTORY_DOWNLOADS, name)
+                                    dm.enqueue(req)
+                                }
+                                Toast.makeText(context, "Download started", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Could not start the download", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                    ) { Text("⬇ Download full", fontWeight = FontWeight.Bold) }
                     else -> Text("No free full version found. Use your Library page to open it with your sources.", color = Muted, fontSize = 13.sp)
                 }
                 if (item.previewUrl != null) {
@@ -602,13 +855,7 @@ private fun DetailSheet(
             }
             if (item.tab == BrowseTab.Novels && item.readUrl != null) {
                 Button(
-                    onClick = {
-                        try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.readUrl)))
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "No app can open this link", Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                    onClick = { onRead(item) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Accent),
                 ) { Text("📖 Read", fontWeight = FontWeight.Bold) }

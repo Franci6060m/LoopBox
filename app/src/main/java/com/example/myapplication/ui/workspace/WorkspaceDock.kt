@@ -107,6 +107,11 @@ fun WorkspaceDock(
             contentDescription = if (language == AppLanguage.RU) "Поиск" else "Search",
             onClick = {
                 if (dimmed || hidden) return@CapsuleDockItem
+                if (selected == WorkspacePage.BROWSE) {
+                    com.example.myapplication.loopbox.BrowseSearchBus.active =
+                        !com.example.myapplication.loopbox.BrowseSearchBus.active
+                    return@CapsuleDockItem
+                }
                 if (selected != WorkspacePage.HOME) onSelect(WorkspacePage.HOME)
                 search.toggle()
             },
@@ -118,7 +123,7 @@ fun WorkspaceDock(
                 modifier = Modifier.size(ICON_SIZE),
             )
         },
-        trailingActive = search.active,
+        trailingActive = search.active || (selected == WorkspacePage.BROWSE && com.example.myapplication.loopbox.BrowseSearchBus.active),
         modifier = modifier
             .offset {
                 IntOffset(0, (hideDistancePx * hideProgress).roundToInt())

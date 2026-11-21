@@ -181,7 +181,7 @@ object BrowseRepository {
 
     private suspend fun novels(query: String, limit: Int = 20): List<BrowseItem> {
         val url = "https://openlibrary.org/search.json?q=${enc(query)}&has_fulltext=true&limit=$limit" +
-            "&fields=key,title,author_name,cover_i,first_publish_year,ia"
+            "&language=eng&fields=key,title,author_name,cover_i,first_publish_year,ia"
         return json(url).optJSONArray("docs").objects().mapNotNull { d ->
             val title = d.str("title")
             if (title.isBlank()) return@mapNotNull null
@@ -199,6 +199,62 @@ object BrowseRepository {
                 readUrl = if (ia.isNotBlank()) "$IA/details/$ia" else "https://openlibrary.org" + d.str("key"),
             )
         }.distinctBy { it.id }
+    }
+
+    // ---------------- Project Gutenberg (Gutendex) ----------------
+
+    /** Public-domain English books. No key needed. */
+    private suspend fun gutenberg(query: String, topic: String = ""): List<BrowseItem> {
+        val q = if (query.isNotBlank()) "&search=${enc(query)}" else ""
+        val t = if (topic.isNotBlank()) "&topic=${enc(topic)}" else ""
+        val arr = json("https://gutendex.com/books/?languages=en&copyright=false$q$t").optJSONArray("results").objects()
+        return arr.mapNotNull { b ->
+            val title = b.str("title")
+            val id = b.optInt("id", 0)
+            if (title.isBlank() || id == 0) return@mapNotNull null
+            val author = b.optJSONArray("authors").objects().firstOrNull()?.str("name").orEmpty()
+            val formats = b.optJSONObject("formats")
+            val read = formats?.str("text/html").orEmpty().ifBlank { "https://www.gutenberg.org/ebooks/$id" }
+            val textKey = formats?.keys()?.asSequence()?.firstOrNull { it.startsWith("text/plain") }
+            val text = textKey?.let { formats.str(it) }?.takeIf { it.startsWith("http") }
+            BrowseItem(
+                id = "pg$id",
+                tab = BrowseTab.Novels,
+                title = title,
+                subtitle = author,
+                imageUrl = formats?.str("image/jpeg")?.takeIf { it.startsWith("http") },
+                description = "Public-domain English book from Project Gutenberg.",
+                readUrl = read,
+                textUrl = text,
+            )
+        }.distinctBy { it.id }
+    }
+
+    /** Downloads a Gutenberg plain-text book and returns its paragraphs, without the licence header and footer. */
+    suspend fun bookParagraphs(textUrl: String): List<String> {
+        var t = get(textUrl).replace("\r\n", "\n")
+        val start = Regex("\\*\\*\\* ?START OF[^\\n]*\\n").find(t)
+        if (start != null) t = t.substring(start.range.last + 1)
+        val end = Regex("\\*\\*\\* ?END OF").find(t)
+        if (end != null) t = t.substring(0, end.range.first)
+        return t.split(Regex("\\n\\s*\\n"))
+            .map { it.replace(Regex("\\s*\\n\\s*"), " ").trim() }
+            .filter { it.isNotEmpty() }
+    }
+
+    // ---------------- TVmaze (no key) ----------------
+
+    /** Real episode count of a series, so a show is not stored as a single episode. */
+    suspend fun tvEpisodeCount(title: String): Int? {
+        val clean = title.replace(Regex(",?\\s*(season|book|series)\\s*\\d+.*$", RegexOption.IGNORE_CASE), "").trim()
+        if (clean.isBlank()) return null
+        return try {
+            val show = json("https://api.tvmaze.com/singlesearch/shows?q=${enc(clean)}&embed=episodes")
+            val n = show.optJSONObject("_embedded")?.optJSONArray("episodes")?.length() ?: 0
+            if (n > 0) n else null
+        } catch (e: Exception) {
+            null
+        }
     }
 
     // ---------------- Deezer ----------------
@@ -242,7 +298,13 @@ object BrowseRepository {
             }
             BrowseTab.Novels -> {
                 val subjects = listOf("Fantasy", "Mystery", "Romance", "Science fiction", "History", "Adventure")
-                val jobs = subjects.map { s -> async { s to (safe { novels("subject:\"${s.lowercase()}\"") } ?: emptyList()) } }
+                val jobs = subjects.map { s ->
+                    async {
+                        val ol = safe { novels("subject:\"${s.lowercase()}\"") } ?: emptyList()
+                        val pg = safe { gutenberg("", s.lowercase()) } ?: emptyList()
+                        s to (pg + ol).distinctBy { it.title.lowercase() }
+                    }
+                }
                 val all = jobs.awaitAll().filter { it.second.isNotEmpty() }
                 val charts = all.toMap()
                 BrowseFeed(all.firstOrNull()?.second.orEmpty().filter { it.imageUrl != null }.take(8), charts, emptyList())
@@ -273,7 +335,11 @@ object BrowseRepository {
                 }
                 (b.await() + a.await()).distinctBy { it.id }
             }
-            BrowseTab.Novels -> safe { novels(q, 30) } ?: emptyList()
+            BrowseTab.Novels -> {
+                val a = async { safe { novels(q, 30) } ?: emptyList() }
+                val b = async { safe { gutenberg(q) } ?: emptyList() }
+                (b.await() + a.await()).distinctBy { it.title.lowercase() }
+            }
             BrowseTab.Music -> {
                 val a = async { safe { deezerItems(json("https://api.deezer.com/search?q=${enc(q)}&limit=30").optJSONArray("data")) } ?: emptyList() }
                 val b = async {

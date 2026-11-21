@@ -830,22 +830,6 @@ fun HomeScreen(
                                     )
                                 }
 
-                                val recsReady = recsState as? RecommendationsUiState.Ready
-                                if (recsReady != null && recsReady.items.isNotEmpty() && uiState.searchQuery.isEmpty()) {
-                                    item(key = "discovery_card", contentType = "discovery_card") {
-                                        DiscoveryCard(
-                                            state = recsReady,
-                                            strings = recsStrings,
-                                            onClick = {
-                                                performHaptic(view, Haptic.Light)
-                                                dismissCloudSyncPill()
-                                                showRecsSheet = true
-                                            },
-                                            modifier = Modifier.padding(horizontal = 16.dp),
-                                        )
-                                    }
-                                }
-
                                 val showApiFirst = list.isEmpty() && uiState.searchQuery.isNotEmpty()
 
                                 if (showApiFirst) {
