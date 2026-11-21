@@ -73,7 +73,7 @@ class MediaDiscoverySearch(
                 DiscoveryKind.ANIME -> searchJikanTop(count)
                 DiscoveryKind.SERIES -> searchTvMazeTop(count)
                 DiscoveryKind.MUSIC -> searchItunesTop(count)
-                DiscoveryKind.MOVIE -> searchArchiveFeatured("movies", count)
+                DiscoveryKind.MOVIE -> (searchCinemeta("movie", null, count) + searchArchiveFeatured("movies", count)).distinctBy { it.title.lowercase() }.take(count)
             }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
     }
@@ -144,9 +144,11 @@ class MediaDiscoverySearch(
                             async { searchArchive(q, "audio", count) },
                         ).map { it.await() }
                         DiscoveryKind.MOVIE -> listOf(
+                            async { searchCinemeta("movie", q, count) },
                             async { searchArchive(q, "movies", count) },
                         ).map { it.await() }
                         DiscoveryKind.SERIES -> listOf(
+                            async { searchCinemeta("series", q, count) },
                             async { searchTvMaze(q, count) },
                             async { searchArchive(q, "movies", count) },
                         ).map { it.await() }
@@ -161,6 +163,25 @@ class MediaDiscoverySearch(
             } catch (_: Exception) {
                 emptyList()
             }
+        }
+    }
+
+    /** Cinemeta metadata catalogue supplies current/popular movie and series posters. */
+    private fun searchCinemeta(kind: String, query: String?, limit: Int): List<DiscoveryHit> {
+        val url = "https://v3-cinemeta.strem.io/catalog/$kind/top.json".toHttpUrlOrNull()?.newBuilder()
+            ?.apply { if (!query.isNullOrBlank()) addQueryParameter("search", query) }
+            ?.build() ?: return emptyList()
+        val root = getJson(url.toString()) as? JsonObject ?: return emptyList()
+        return root["metas"]?.jsonArray.orEmpty().take(limit).mapNotNull { e ->
+            val o = e as? JsonObject ?: return@mapNotNull null
+            DiscoveryHit(
+                title = o.string("name") ?: return@mapNotNull null,
+                year = o.string("releaseInfo")?.take(4),
+                description = o.string("description")?.take(500),
+                artworkUrl = o.string("poster"),
+                metadataUrl = o.string("imdb_id")?.let { "https://www.imdb.com/title/$it/" },
+                source = "Cinemeta",
+            )
         }
     }
 
