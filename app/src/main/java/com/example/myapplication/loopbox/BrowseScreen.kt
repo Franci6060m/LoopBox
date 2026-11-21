@@ -2,7 +2,6 @@ package com.example.myapplication.loopbox
 
 import android.app.DownloadManager
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
@@ -158,6 +157,7 @@ fun BrowseScreen(
     var results by remember { mutableStateOf<List<BrowseItem>>(emptyList()) }
     var selected by remember { mutableStateOf<BrowseItem?>(null) }
     var videoUrls by remember { mutableStateOf<List<String>?>(null) }
+    var readerUrl by remember { mutableStateOf<String?>(null) }
     val music = remember { MusicController(context) }
     DisposableEffect(music) { onDispose { music.release() } }
 
@@ -191,8 +191,17 @@ fun BrowseScreen(
                         if (tracks.isEmpty()) {
                             Toast.makeText(context, "No playable file found", Toast.LENGTH_SHORT).show()
                         } else {
-                            val items = tracks.mapIndexed { i, t -> item.copy(id = item.id + "#" + i, title = t.first, subtitle = item.title) }
-                            music.play(items, tracks.map { it.second })
+                            if (downloadMode) {
+                                tracks.forEachIndexed { i, t ->
+                                    val ext = t.second.substringAfterLast('.', "mp3").take(4)
+                                    val name = t.first.replace(Regex("[^A-Za-z0-9 ._-]"), "").trim().ifBlank { "track ${i + 1}" } + "." + ext
+                                    enqueueDownload(context, t.second, name, android.os.Environment.DIRECTORY_MUSIC)
+                                }
+                                Toast.makeText(context, "Downloading ${tracks.size} track(s)", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val items = tracks.mapIndexed { i, t -> item.copy(id = item.id + "#" + i, title = t.first, subtitle = item.title) }
+                                music.play(items, tracks.map { it.second })
+                            }
                         }
                     } else {
                         val playable = siblings.filter { it.previewUrl != null }
@@ -219,6 +228,24 @@ fun BrowseScreen(
                     onTab = { tabIndex = it; query = "" },
                     onSearch = { searching = !searching; if (!searching) query = "" },
                 )
+            }
+            if (tab != BrowseTab.Novels) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text("Free files:", color = Muted, fontSize = 13.sp)
+                        OutlinedButton(
+                            onClick = {
+                                downloadMode = !downloadMode
+                                modePrefs.edit().putString("mode", if (downloadMode) "download" else "stream").apply()
+                            },
+                            border = BorderStroke(1.dp, Color(0xFF3A3A3C)),
+                        ) { Text(if (downloadMode) "Download" else "Stream", color = Fg) }
+                    }
+                }
             }
             if (searching) {
                 item {
@@ -307,10 +334,57 @@ fun BrowseScreen(
             item = item,
             onDismiss = { selected = null },
             onPlay = { urls -> videoUrls = urls },
+            onRead = { url -> readerUrl = url },
+            downloadMode = downloadMode,
+            onModeChange = { downloadMode = it; modePrefs.edit().putString("mode", if (it) "download" else "stream").apply() },
             onOpenInLibrary = { id -> selected = null; onOpenInLibrary(id) },
         )
     }
     videoUrls?.let { urls -> VideoDialog(urls) { videoUrls = null } }
+    readerUrl?.let { url -> ReaderDialog(url) { readerUrl = null } }
+}
+
+private fun enqueueDownload(context: Context, url: String, fileName: String, dir: String) {
+    val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    dm.enqueue(
+        DownloadManager.Request(Uri.parse(url))
+            .setTitle(fileName)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalFilesDir(context, dir, fileName),
+    )
+}
+
+/** Reads a book inside the app: Project Gutenberg text, or an Internet Archive / Open Library page. */
+@Composable
+private fun ReaderDialog(url: String, onClose: () -> Unit) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(Bg)) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize().statusBarsPadding(),
+                factory = { ctx ->
+                    android.webkit.WebView(ctx).apply {
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        setBackgroundColor(android.graphics.Color.parseColor("#111111"))
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun onPageFinished(view: android.webkit.WebView?, u: String?) {
+                                if (u != null && u.contains("gutenberg.org")) {
+                                    view?.evaluateJavascript(
+                                        "document.body.style.cssText='background:#111;color:#ddd;max-width:42em;margin:0 auto;padding:16px;font-size:18px;line-height:1.6';",
+                                        null,
+                                    )
+                                }
+                            }
+                        }
+                        loadUrl(url)
+                    }
+                },
+            )
+            IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding()) {
+                Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
+            }
+        }
+    }
 }
 
 @Composable
@@ -497,6 +571,9 @@ private fun DetailSheet(
     item: BrowseItem,
     onDismiss: () -> Unit,
     onPlay: (List<String>) -> Unit,
+    onRead: (String) -> Unit,
+    downloadMode: Boolean,
+    onModeChange: (Boolean) -> Unit,
     onOpenInLibrary: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -580,10 +657,7 @@ private fun DetailSheet(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Mode", color = Muted, fontSize = 13.sp)
                     OutlinedButton(
-                        onClick = {
-                            downloadMode = !downloadMode
-                            modePrefs.edit().putString("mode", if (downloadMode) "download" else "stream").apply()
-                        },
+                        onClick = { onModeChange(!downloadMode) },
                         border = BorderStroke(1.dp, Color(0xFF3A3A3C)),
                     ) { Text(if (downloadMode) "Download" else "Stream", color = Fg) }
                 }
@@ -637,13 +711,7 @@ private fun DetailSheet(
             }
             if (item.tab == BrowseTab.Novels && item.readUrl != null) {
                 Button(
-                    onClick = {
-                        try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.readUrl)))
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "No app can open this link", Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                    onClick = { onRead(item.readUrl) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Accent),
                 ) { Text("📖 Read", fontWeight = FontWeight.Bold) }
