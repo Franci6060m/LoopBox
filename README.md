@@ -1,258 +1,277 @@
-[![Downloads@latest](https://img.shields.io/github/downloads/truelockmc/streambert/latest/total?style=for-the-badge)](https://codeberg.org/truelockmc/streambert/releases/latest/)
-[![Release Version Badge](https://img.shields.io/github/v/release/truelockmc/streambert?style=for-the-badge)](https://github.com/truelockmc/streambert/releases)
-[![Issues Badge](https://img.shields.io/github/issues/truelockmc/streambert?style=for-the-badge)](https://github.com/truelockmc/streambert/issues)
-[![Closed Issues Badge](https://img.shields.io/github/issues-closed/truelockmc/streambert?color=%238256d0&style=for-the-badge)](https://github.com/truelockmc/streambert/issues?q=is%3Aissue+is%3Aclosed)<br>
+<div align="center">
 
-[![GitHub](https://img.shields.io/badge/GitHub-truelockmc%2Fstreambert-181717?style=for-the-badge&logo=github)](https://github.com/truelockmc/streambert)
-[![Codeberg](https://img.shields.io/badge/Codeberg-truelockmc%2Fstreambert-2185D0?style=for-the-badge&logo=codeberg)](https://codeberg.org/truelockmc/streambert)
-[![AUR Version](https://img.shields.io/aur/version/streambert-bin?style=for-the-badge&logo=archlinux)](https://aur.archlinux.org/packages/streambert-bin)
-# Streambert
-A cross-platform Electron Desktop App to stream and download any Movie, TV Series or Anime in the World. Zero Ads and Tracking[*](#privacy-disclaimer) <br></br>
-<a href="https://trendshift.io/repositories/31115" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/31115" alt="truelockmc%2Fstreambert | Trendshift" width="250" height="55"/></a>
+<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:FF4D57,100:1a1a2e&height=220&section=header&text=Zangetsu&fontSize=75&fontColor=ffffff&animation=fadeIn&fontAlignY=38&desc=Track.%20Search.%20Sync.%20Organize.&descAlignY=58&descSize=20" />
 
-![Logo](public/logo.svg)
+<img src="assets/icon/app_icon.png" width="120" alt="Zangetsu" />
 
-[Installation](#requirements)
+### A modern, open-source app for anime, movies, manga & light novels — on Android, TV and iOS
 
-## Why Streambert?
-- 🎦 **Streaming:** Stream any Movie, Anime or TV Series from around the World.
-- 📥 **Downloading:** Download anything you want to watch.
-- 📃 **Subtitles:** Download and manage Subtitles.
-- ⚙️ **Customizability:** Customize the Interface and Features to your unique needs.
-- 📚 **Library:** Track what you watched, save stuff you want to watch and manage your Downloads.
-- ✨ **Trending:** Discover new things to Watch every Day.
-- 🛡️ **Privacy:** Completely Ads and Tracker free, forever.
-- ⚡ **Speed:** Stream faster than any Browser can, download with multithreading.
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=22&pause=1200&color=FF4D57&center=true&vCenter=true&width=600&lines=Track+your+watch+history+%F0%9F%93%88;Read+manga+%26+light+novels+%F0%9F%93%9A;Sync+progress+across+devices+%F0%9F%94%84;Discover+anime+%26+movies+%F0%9F%94%8D;100%25+open+source+%E2%9D%A4%EF%B8%8F" alt="Typing SVG" />
 
-![Explore new Stuff](screenshots/trending.png)
-![Watch TV Series](screenshots/series.png)
-![Watch Movies](screenshots/movie.png)
-![Watch Anime](screenshots/anime.png)
-![Without any Ads or Trackers](screenshots/adblock.png)
-![Customize](screenshots/customize-1.png)
-![Customize](screenshots/customize-2.png)
-![Download Subtitles](screenshots/subs.png)
-![Download Everything](screenshots/download.png)
----
-[![Stargazers](https://reporoster.com/stars/dark/truelockmc/streambert)](https://github.com/truelockmc/streambert/stargazers)
----
-## Streaming
-The Application gets video streams from different hosters/aggregators, see [PLAYER_SOURCES](src/utils/api.js). <br></br>
-It fetches Information for Images, Info Texts, Search and Homepage from [tmdb](https://www.themoviedb.org/).
+<br/>
 
----
+[![Latest Release](https://img.shields.io/github/v/release/Spyou/Zangetsu?style=for-the-badge&label=Release&color=FF4D57&logo=github)](https://github.com/Spyou/Zangetsu/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Spyou/Zangetsu/total?style=for-the-badge&color=FF4D57&logo=android&logoColor=white)](https://github.com/Spyou/Zangetsu/releases)
+[![Stars](https://img.shields.io/github/stars/Spyou/Zangetsu?style=for-the-badge&color=FF4D57&logo=github)](https://github.com/Spyou/Zangetsu/stargazers)
+[![Forks](https://img.shields.io/github/forks/Spyou/Zangetsu?style=for-the-badge&color=FF4D57&logo=github)](https://github.com/Spyou/Zangetsu/network/members)
+[![License](https://img.shields.io/github/license/Spyou/Zangetsu?style=for-the-badge&color=FF4D57)](LICENSE)
+[![Issues](https://img.shields.io/github/issues/Spyou/Zangetsu?style=for-the-badge&color=FF4D57&logo=github)](https://github.com/Spyou/Zangetsu/issues)
 
-## Downloading
-You can download those Video Streams because the Program sources Links to their .m3u8 Playlist Files ([similar to this Browser Extension](https://addons.mozilla.org/en-US/firefox/addon/m3u8-link-finder/)). <br></br>
-Once you click 'Download' these Links are used to download the Full Movie/TV Episode using [this Program](https://github.com/truelockmc/vid-dl-cli-only). You can then watch them In-App or take the Files on any Storage Medium you want.
+<br/>
 
----
+![Platform](https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)
+![Platform](https://img.shields.io/badge/Android_TV-FF4D57?style=for-the-badge&logo=youtube&logoColor=white)
+![Platform](https://img.shields.io/badge/Windows-Soon-0078D4?style=for-the-badge&logo=windows&logoColor=white)
+![Platform](https://img.shields.io/badge/iOS-Beta-000000?style=for-the-badge&logo=apple&logoColor=white)
+![Flutter](https://img.shields.io/badge/Built%20with-Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)
+![Dart](https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&logo=dart&logoColor=white)
 
-## Anime
-You can also watch Anime, the App checks if a Movie or Series is an Anime and then sources its Metadata from [AniList](https://anilist.co/) instead of [tmdb](https://www.themoviedb.org/). <br></br>
-Media Files for Animes are scraped from AllManga.to (i stole this mechanic from [ani-cli](https://github.com/pystardust/ani-cli)). The App directly gets .mp4 Files and doesnt evem show you the AllManga website, you can also download these Files, just like any other Content.
+<br/>
 
+<a href="https://github.com/Spyou/Zangetsu/releases/latest">
+  <img src="https://img.shields.io/badge/⬇️_DOWNLOAD_ZANGETSU-FF4D57?style=for-the-badge&logo=android&logoColor=white&labelColor=1a1a2e" alt="Download Zangetsu" height="42"/>
+</a>
+&nbsp;
+<a href="https://discord.gg/hey6vz9kg6">
+  <img src="https://img.shields.io/badge/💬_JOIN_DISCORD-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1a1a2e" alt="Discord" height="42"/>
+</a>
 
-## Requirements
+<br/><br/>
 
-- [Node.js](https://nodejs.org/) (>=22.12.0) installed (only if you aren't using [prebuilt Binaries](https://codeberg.org/truelockmc/streambert/releases/latest))
-- A free TMDB API Read Access Token ([Guide on how to get one](tmdb-tutorial.md))
-- For downloading, [this Program](https://github.com/truelockmc/vid-dl-cli-only/releases/latest) somewhere on your PC and [ffmpeg](https://ffmpeg.org/download.html) installed
+<p align="center">
+  <a href="#-overview"><b>Overview</b></a> ·
+  <a href="#-screenshots"><b>Screenshots</b></a> ·
+  <a href="#️-download"><b>Download</b></a> ·
+  <a href="#-tech-stack"><b>Tech Stack</b></a> ·
+  <a href="#-faq"><b>FAQ</b></a> ·
+  <a href="#-communities"><b>Communities</b></a> ·
+  <a href="#-license"><b>License</b></a>
+</p>
 
----
-## Installation
-On first launch you'll be prompted to enter your TMDB API key. ([Guide on how to get one](tmdb-tutorial.md))
-It's saved locally, you only need to do this once.
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:FF4D57,100:1a1a2e&height=4" />
 
-### Linux, Manual (.deb / .AppImage / .pacman)
+</div>
 
-Download the latest `.deb` `.pacman` or `.AppImage` from the [Releases](https://codeberg.org/truelockmc/streambert/releases/latest) page.
-```bash
-# .deb
-sudo dpkg -i streambert_*.deb
+## 🎬 Overview
 
-# Arch Linux (.pacman)
-sudo pacman -U streambert-*.pacman
+Zangetsu is a modern, open-source app for keeping anime, movies, series, manga and light novels in one place.
 
-# .AppImage (you can also do it with Gearlever)
-chmod +x Streambert-x64.AppImage && ./Streambert-x64.AppImage
-```
+It has three modes — **Streaming**, **Manga** and **Novel** — each with its own sources and its own reader or player, plus a full **Android TV** interface built for a remote rather than a touchscreen.
 
-### Windows
+It focuses on **discovery**, **tracking**, **syncing**, and **personal library management** — wrapped in a clean interface and a smooth user experience.
 
-Download the latest `Streambert Setup *.exe` from the [Releases](https://codeberg.org/truelockmc/streambert/releases/latest) page and run it.
+> [!NOTE]
+> **Keep your lists, progress, and history in sync wherever you go.**
 
-### macOS
-Download the latest `Streambert-*-universal.dmg` from the [Releases](https://codeberg.org/truelockmc/streambert/releases/latest) page, open it and drag Streambert to your Applications folder.
+<div align="center">
+
+| 🎬 Watch | 📚 Read | 📈 Track | 🔄 Sync |
+|:---:|:---:|:---:|:---:|
+| Anime, movies & series | Manga & light novels | Progress & history | Across devices |
+
+</div>
 
 ---
 
+## 📸 Screenshots
 
-## Building from Source
-1. Install dependencies:
-```bash
-npm install
-```
-2. Build
-```bash
-npm run dist:win   
-```
-or
-```bash
-npm run dist:linux 
-```
-or (for Arch Linux)
-```bash
-npm run dist:arch
-```
-or (for an AppImage only)
-```bash
-npm run dist:appimage
-```
-or (for a .deb only)
-```bash
-npm run dist:deb
-```
-or (for a .rpm only)
-```bash
-npm run dist:rpm
-```
-or (for macOS)
-```bash
-npm run dist:mac
-```
-or (build all platforms at once)
-```bash
-npm run dist
-```
+<div align="center">
 
-> [!IMPORTANT]
-> If you are building/installing on Arch Linux and encounter errors, you may need these libraries:
-> - **libcrypt.so.1 error:** `sudo pacman -S libxcrypt-compat`
-> - **http-parser dependency error:** `yay -S http-parser` (from AUR)
+<table>
+<tr>
+<td align="center">
+<img src=".github/screenshots/home.png" width="185" alt="Home"/>
+<br/><b>🏠 Home</b>
+</td>
+<td align="center">
+<img src=".github/screenshots/search.png" width="185" alt="Search"/>
+<br/><b>🔍 Search</b>
+</td>
+<td align="center">
+<img src=".github/screenshots/detail.png" width="185" alt="Detail"/>
+<br/><b>📄 Details</b>
+</td>
+<td align="center">
+<img src=".github/screenshots/my-list.png" width="185" alt="My List"/>
+<br/><b>📋 My List</b>
+</td>
+</tr>
+</table>
 
-## License
-This project is open-source software licensed under the GNU General Public License v3.0 [(GPL-3.0)](LICENSE).
+</div>
 
-Forks may be created but they MUST stay open-sourced.
+---
 
-## Contributing
-Everyone is welcome to contribute to this project.
-Before contributing please make sure to read the [Contributing Guidelines](CONTRIBUTING.md) and act accordingly.
+## ⬇️ Download
 
-## Privacy Disclaimer
-Streambert itself does not collect ANY data. There is no centralized service which the app relies on.
-However, the streaming sources and github (for downloading updates in-app) may still collect your data.
+Get the latest version from the **[GitHub Releases](https://github.com/Spyou/Zangetsu/releases/latest)** page.
 
-Streambert has built-in tracker/- and adblocking, but obviously that is not perfect.
+<div align="center">
 
-## Legal Disclaimer
+| APK | Recommended for |
+|---|---|
+| 🟢 `Zangetsu-vX.Y.Z-arm64-v8a.apk` | Modern 64-bit Android devices — **Recommended** |
+| 🟡 `Zangetsu-vX.Y.Z-armeabi-v7a.apk` | Older 32-bit Android devices |
+| 🔵 `Zangetsu-vX.Y.Z-universal.apk` | Not sure which one to use? Works on everything, but larger |
+| 📺 `Zangetsu-vX.Y.Z-tv.apk` | Android TV devices |
 
-**IMPORTANT: This application is for educational and personal use only.**
+</div>
 
-- Streambert does not host, store, or distribute any copyrighted content
-- All content is sourced from third-party providers and websites
-- Users are solely responsible for ensuring they have legal rights to access any content
-- The developer does not endorse or encourage copyright infringement
-- Users must comply with all applicable laws in their jurisdiction
-- Any legal issues should be directed to the actual content providers
-- This app functions as a search engine aggregator only
-- No copyrighted material is stored on my side
+> [!TIP]
+> Zangetsu checks GitHub Releases for new versions and can update itself directly from
+> **`Settings → Check for updates`**
 
-## Legal Notice
+---
 
-This application is provided "as is" for educational purposes. The developer:
-- Does not claim ownership of any content
-- Does not profit from copyrighted material in any way
-- Does not control third-party content providers
-- Encourages users to support content creators through legal means
+## 🧩 Platforms & Roadmap
 
-[![RepoStars](https://repostars.dev/api/embed?repo=truelockmc%2Fstreambert&theme=dark)](https://repostars.dev/?repos=truelockmc%2Fstreambert&theme=dark)
+<div align="center">
+
+| Platform | Status |
+|---|:---:|
+| 🤖 Android | ✅ Available |
+| 📺 Android TV | ✅ Available |
+| 🍎 iOS | 🧪 Beta (TestFlight) |
+| 🪟 Windows | 🚧 In progress |
+
+</div>
+
+> On iOS, CloudStream, Aniyomi and Mihon extensions can't be loaded — iOS
+> doesn't allow that kind of plugin. Zangetsu's own JavaScript sources, the
+> player, downloads and trackers all work.
+
+- [x] Android release
+- [x] Android TV release
+- [x] iOS beta
+- [ ] iOS release
+- [ ] Windows release
+
+---
+
+## 🛠 Tech Stack
+
+<div align="center">
+
+<img src="https://skillicons.dev/icons?i=flutter,dart,androidstudio,git,github,discord" alt="Tech Stack"/>
+
+</div>
+
+---
+
+## ❓ FAQ
 
 <details>
-    <summary>Project Structure</summary>
-    
-```
-Project Root
-├── index.html
-├── main.js
-├── package.json
-├── preload.js
-├── vite.config.js
-├── LICENSE
-├── README.md
-├── public
-│   ├── icon.png
-│   ├── installer-sidebar.bmp
-│   └── logo.svg
-├── screenshots
-│   ├── adblock.png
-│   ├── anime.png
-│   ├── api-settings_tmdb.png
-│   ├── application_tmdb.png
-│   ├── download.png
-│   ├── icon.png
-│   ├── movie.png
-│   ├── personal-use_tmdb.png
-│   ├── series.png
-│   ├── setup.png
-│   ├── signup_tmdb.png
-│   ├── subs.png
-│   ├── token_tmdb.png
-│   └── trending.png
-└── src
-    ├── App.jsx
-    ├── main.jsx
-    ├── components
-    │   ├── BlockedStatsModal.jsx
-    │   ├── CloseConfirmModal.jsx
-    │   ├── DownloadModal.jsx
-    │   ├── ErrorBoundary.jsx
-    │   ├── Icons.jsx
-    │   ├── KeyboardShortcutsModal.jsx
-    │   ├── MediaCard.jsx
-    │   ├── SearchModal.jsx
-    │   ├── SetupScreen.jsx
-    │   ├── Sidebar.jsx
-    │   ├── SubtitleDownloaderModal.jsx
-    │   ├── TrailerModal.jsx
-    │   ├── TrendingCarousel.jsx
-    │   ├── UpdateModal.jsx
-    │   └── WindowTitlebar.jsx
-    ├── ipc
-    │   ├── allmanga.js
-    │   ├── blockStats.js
-    │   ├── downloads.js
-    │   ├── player.js
-    │   ├── storage.js
-    │   └── subtitles.js
-    ├── pages
-    │   ├── DownloadsPage.jsx
-    │   ├── HomePage.jsx
-    │   ├── LibraryPage.jsx
-    │   ├── MoviePage.jsx
-    │   ├── SettingsPage.jsx
-    │   └── TVPage.jsx
-    ├── styles
-    │   ├── global.css
-    │   └── fonts
-    │       ├── bebas-neue-regular.woff2
-    │       ├── dm-sans-300.woff2
-    │       ├── dm-sans-500.woff2
-    │       ├── dm-sans-600.woff2
-    │       └── dm-sans-regular.woff2
-    └── utils
-        ├── ageRating.js
-        ├── aniSkip.js
-        ├── api.js
-        ├── appearance.js
-        ├── backup.js
-        ├── episodeMappings.js
-        ├── homeLayout.js
-        ├── storage.js
-        ├── subtitles.js
-        ├── updates.js
-        ├── useBlockedStats.js
-        └── useRatings.js
-```
+<summary><b>Does Zangetsu host or stream any content?</b></summary>
+<br/>
+No. Zangetsu is a tracking and management tool only — it does not host, provide, distribute, or maintain streaming content or extensions.
 </details>
+
+<details>
+<summary><b>Which APK should I download?</b></summary>
+<br/>
+Use <code>arm64-v8a</code> on modern phones. If you're unsure or hit compatibility issues, grab the <code>universal</code> build instead.
+</details>
+
+<details>
+<summary><b>Is Zangetsu free?</b></summary>
+<br/>
+Yes — Zangetsu is fully open source under the GPL-3.0 license.
+</details>
+
+<details>
+<summary><b>How do I get support or report a bug?</b></summary>
+<br/>
+Join the <a href="https://discord.gg/hey6vz9kg6">Discord server</a> or open an <a href="https://github.com/Spyou/Zangetsu/issues">issue on GitHub</a>.
+</details>
+
+---
+
+## ⚠️ Disclaimer
+
+> [!IMPORTANT]
+> **Zangetsu is a tracking and management tool only.** It does not host, provide, distribute, or maintain streaming content or extensions.
+
+- **User Responsibility** — Users are solely responsible for how they use the app and any third-party services or extensions they choose to interact with, and must comply with all applicable laws, copyright, and intellectual property rights.
+- **No Liability** — The developer of Zangetsu disclaims all liability for misuse, legal issues, or violations arising from user actions. Legal concerns related to third-party services or extensions must be directed to their creators, not Zangetsu.
+- **Services** — Zangetsu integrates only with official APIs of supported services. Third-party extensions are the responsibility of their creators, not the Zangetsu developer.
+
+---
+
+## 🌐 Communities
+
+<div align="center">
+
+<a href="https://discord.gg/hey6vz9kg6">
+  <img src="https://img.shields.io/badge/Discord-Join%20the%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"/>
+</a>
+<a href="https://www.reddit.com/r/ZangetsuOfficial/s/JgDHfIOlIT">
+  <img src="https://img.shields.io/badge/Reddit-Join%20the%20Community-FF4500?style=for-the-badge&logo=reddit&logoColor=white" alt="Reddit"/>
+</a>
+<a href="https://t.me/ZangetsuStream">
+  <img src="https://img.shields.io/badge/Telegram-Join%20the%20Channel-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram"/>
+</a>
+
+</div>
+
+---
+
+## 👀 Visitors
+
+<div align="center">
+
+<a href="https://count.getloli.com/">
+  <img src="https://count.getloli.com/@Zangetsu?name=zangetsu&theme=rule34&padding=8&offset=0&align=top&scale=1&pixelated=1&darkmode=auto" alt="Visitor count"/>
+</a>
+
+</div>
+
+---
+
+## 🙏 Acknowledgments
+
+A heartfelt thank you to everyone who has contributed to the development of Zangetsu. Your time, effort, feedback, and support help keep the project moving forward.
+
+<div align="center">
+
+<a href="https://github.com/Spyou/Zangetsu/graphs/contributors">
+  <img alt="GitHub contributors" src="https://img.shields.io/github/contributors/Spyou/Zangetsu?style=for-the-badge&label=Contributors&labelColor=1a1a2e&color=FF4D57" />
+</a>
+
+<br/><br/>
+
+<a href="https://github.com/Spyou/Zangetsu/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Spyou/Zangetsu" alt="Contributors"/>
+</a>
+
+</div>
+
+---
+
+## 📜 License
+
+Copyright © 2026 **Krishna Vishwakarma**
+
+Zangetsu is licensed under the **[GNU GPL-3.0](LICENSE)**. See the included license file for the complete terms.
+
+<div align="center">
+
+<br/>
+
+<img src="assets/icon/app_icon.png" width="70" alt="Zangetsu"/>
+
+### Zangetsu
+*Made with ❤️ for anime, movie & manga fans.*
+
+<br/>
+
+[⭐ Star the repository](https://github.com/Spyou/Zangetsu)
+&nbsp;&nbsp;•&nbsp;&nbsp;
+[⬇️ Download](https://github.com/Spyou/Zangetsu/releases/latest)
+&nbsp;&nbsp;•&nbsp;&nbsp;
+[🐛 Report an issue](https://github.com/Spyou/Zangetsu/issues)
+
+<br/>
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:1a1a2e,100:FF4D57&height=120&section=footer" />
+
+</div>

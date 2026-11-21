@@ -1,111 +1,110 @@
-# Contributing Guidelines
+# Contributing to Zangetsu
 
-First of all, thank you for your interest in contributing to this project!
-
-We welcome all kinds of contributions, including bug reports, feature requests, documentation improvements, code contributions, and feedback.
+First off, thanks for considering contributing to Zangetsu! Whether it's a bug fix, a new feature, a new provider, or just fixing a typo — it's appreciated.
 
 ## Before You Start
 
-Before opening an issue or pull request, please:
+- Check [open issues](../../issues) to see if what you want to work on is already being tracked.
+- For anything bigger than a small fix (new features, big refactors, new providers), open an issue first to discuss the approach before writing code — saves everyone time.
+- By submitting a pull request, you agree to our [Contributor License Agreement](CLA.md). Please give it a quick read.
+- Zangetsu is licensed under **GPLv3 with additional terms** (see [`LICENSE`](LICENSE)) — your contributions will be distributed under those same terms.
+- Using AI tools to help write your Contribution? That's allowed — read [`AI_POLICY.md`](AI_POLICY.md) first for disclosure and quality expectations.
+- Third-party code Zangetsu incorporates (and its licenses) is documented in [`NOTICE.md`](NOTICE.md) — worth a skim if you're touching provider/extractor code.
 
-* Read the README.
-* Search existing issues and pull requests.
-* Make sure your idea or bug report has not already been discussed.
+## Repo Structure
 
-## Ways to Contribute
+This repo is the main Zangetsu app (Flutter/Dart, with native `android/` and `ios/` platform folders). A few things worth knowing before you dive in:
 
-### Reporting Bugs
+- `lib/` — the main Dart application code
+- `providers/` — provider integrations bundled with the app
+- `extractors/` — logic for extracting playable streams from sources
+- `js_harness/` — JavaScript module execution used by providers
+- `assets/` — icons, splash screens, and other static assets
+- `test/` — tests
 
-If you find a bug, please open an issue and fill out the `bug report` template.
+**Note:** additional/community content sources live in a separate repo, [zangetsu-providers](https://github.com/Spyou/zangetsu-providers). If your contribution is a new content source rather than a core app change, check there first — it may be the better place for it.
 
-### Suggesting Features
+## Setting Up Your Dev Environment
 
-Feature requests are welcome too.
+1. Fork the repo and clone your fork:
+   ```bash
+   git clone https://github.com/Spyou/Zangetsu.git
+   cd Zangetsu
+   ```
+2. Make sure you have the **Flutter SDK** installed (check `pubspec.yaml` / `.metadata` for the version this project targets).
+3. Get dependencies:
+   ```bash
+   flutter pub get
+   ```
+4. Run the app on a connected device/emulator:
+   ```bash
+   flutter run
+   ```
+5. Create a new branch for your change:
+   ```bash
+   git checkout -b fix/short-description
+   ```
 
-Please open an issue and fill out the `feature request` template.
+## Making Changes
 
-Always make sure to have a good title and to properly fill out the required fields!
+- Keep pull requests focused — one fix or feature per PR is easier to review than a bundle of unrelated changes.
+- Match the existing code style already in the file you're editing.
+- Add or update tests under `test/` where it makes sense.
+- Update relevant documentation/comments if your change affects behavior.
+- **If your PR adds a new dependency, or incorporates code/assets derived from another project, update [`NOTICE.md`](NOTICE.md) in the same PR.** This isn't optional — PRs that introduce undocumented third-party code will be asked to add the attribution before merging.
 
-### Improving Documentation
+## Code Analysis
 
-Documentation improvements are often the easiest way to contribute.
-
-Examples include:
-
-* Fixing typos
-* Clarifying explanations
-* Adding examples
-* Improving setup instructions
-
-## Development Workflow
-
-1. Fork the repository.
-2. Create a new branch:
+This project uses `analysis_options.yaml` to enforce Dart/Flutter lint rules. Before opening a PR, run:
 
 ```bash
-git checkout -b feature/my-feature
+flutter analyze
 ```
 
-3. Make your changes.
-4. Test your changes and build using ```npm run dist:{target filetype}```
-5. Commit your changes.
-6. Push your branch.
-7. Open a Pull Request.
+and fix anything flagged. If you're touching platform-specific code (`android/`, `ios/`), also make sure the native build still compiles cleanly.
 
-## Coding Standards
+## Commit Messages
 
-Please follow the existing code style and project structure.
+Write clear, descriptive commit messages. We loosely follow this format:
 
-General guidelines:
+```
+type: short summary
 
-* Write clean and maintainable code.
-* Keep changes focused and minimal.
-* Avoid unrelated refactoring.
-* Try to keep comments short to prevent tldr situations.
+Optional longer description if needed.
+```
 
-## AI
-* AI may be used as assistance when writing text or code.
-* That usage should be disclosed when submitting a PR.
-* You should ALWAYS understand the code you are submitting.
-* Do NOT create Issues or PRs solely created by AI, always review and make changes yourself.
-* Commits authored or co-authored by AI agent accounts will NOT be accepted/merged.
+Where `type` is one of: `fix`, `feat`, `docs`, `refactor`, `chore`, `test`.
 
-## Pull Requests
+Example: `fix: correct resume position not saving on episode change`
 
-Before submitting a Pull Request, ensure that:
+## Submitting a Pull Request
 
-* If it is a bug fix make sure there is a corresponding issue first.
-* You have a good title.
-* The code builds successfully.
-* You have tested the feature and ensure it works as expected.
-* Documentation (README) has been updated if necessary.
-* The PR focuses on a single topic (do not address multiple unrelated things in one PR).
-* If not all of these things apply you may still already open a draft PR.
+1. Push your branch and open a PR against `main`.
+2. Fill out the PR template with what changed and why.
+3. Link any related issues (e.g. `Closes #42`).
+4. Make sure CI checks (build, analyze, tests) pass.
+5. Be responsive to review feedback — most PRs go through a round or two of comments before merging.
 
-Please include:
+## Reporting Bugs
 
-* A description of the changes
-* The motivation behind them
-* References to related issues
+Open an issue with:
+- What you expected to happen vs. what actually happened
+- Steps to reproduce
+- Device/OS and app version
+- Screenshots, logs, or a stack trace if relevant
 
-## Code Review
+## Adding or Fixing a Provider/Extractor
 
-All contributions are reviewed before being merged.
+If you're contributing a provider or extractor:
+- Only submit sources you have the right to interact with — see Section 5 of the [CLA](CLA.md).
+- Keep provider logic isolated from core app logic where possible.
+- Test that search, browsing, and playback all work end-to-end before submitting.
+- Note any rate limits, region restrictions, or fragility (e.g. sources that change their site structure often) in your PR description.
 
-Code quality/security checks must pass.
+## Code of Conduct
 
-Feedback is intended to improve the project and maintain quality. Please be open to discussion and revisions.
+Be respectful. Disagreements about code are fine; personal attacks aren't. Maintainers reserve the right to close issues/PRs or block contributors who don't engage in good faith.
 
-Everyone is welcome to review and provide feedback.
+---
 
-## Community Guidelines
-
-Please be respectful and constructive in all interactions.
-
-Do not advertise your own apps/forks if they are not related to the topic in the thread you are posting.
-
-## Questions?
-
-If you have questions, feel free to open an issue, comment in a discussion or create a new one.
-
-Thank you for contributing ❤️
+Questions? Open an issue or start a discussion — happy to help you get oriented.
