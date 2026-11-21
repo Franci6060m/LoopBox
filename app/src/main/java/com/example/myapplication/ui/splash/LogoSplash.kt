@@ -83,6 +83,7 @@ internal fun LogoSplashCanvas(
 ) {
     Canvas(modifier.fillMaxSize()) {
         drawRect(Color(0xFF0A0A0A))
+        drawRect(Color(0xFF0A0A0A))
         val t = timeSec()
         val a = ((t - 0.2f) / 0.9f).coerceIn(0f, 1f)
         val k = 0.85f + 0.15f * a
