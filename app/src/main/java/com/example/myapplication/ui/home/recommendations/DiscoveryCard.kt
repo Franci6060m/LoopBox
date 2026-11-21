@@ -132,13 +132,13 @@ fun DiscoveryCard(
     val isDark = isAppInDarkTheme()
     val context = LocalContext.current
     val shape = RoundedCornerShape(28.dp)
-    val covers = state.items.take(3)
+    val covers = state.items.take(4)
     val borderStroke = if (isDark) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.8f)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(104.dp)
+            .height(156.dp)
             .clip(shape)
             .border(0.5.dp, borderStroke, shape)
             .background(if (isDark) Color(0xFF161616) else Color(0xFF262626))
@@ -194,20 +194,20 @@ fun DiscoveryCard(
                     text = strings.title,
                     fontFamily = SnProFamily,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 19.sp,
+                    fontSize = 23.sp,
                     color = Color.White,
                 )
                 Text(
                     text = strings.subtitle,
                     fontFamily = SnProFamily,
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     color = Color.White.copy(alpha = 0.7f),
                 )
             }
             Spacer(Modifier.width(12.dp))
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(44.dp)
                     .background(Color.White.copy(alpha = 0.16f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
