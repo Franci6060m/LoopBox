@@ -30,6 +30,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material3.TextButton
+import com.example.myapplication.mediacatalog.LoopBoxHomeDiscoveryRepository
+import com.example.myapplication.mediacatalog.LoopBoxMediaDownloadService
+import com.example.myapplication.mediacatalog.LoopBoxMediaFile
+import com.example.myapplication.mediacatalog.LoopBoxMediaFileChecker
+import com.example.myapplication.mediacatalog.LoopBoxMediaItem
+import com.example.myapplication.mediacatalog.LoopBoxMediaKind
+import com.example.myapplication.mediacatalog.LoopBoxMediaScraper
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -180,6 +189,13 @@ fun BrowseScreen(
     var opening by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf<BrowseItem?>(null) }
     val music = remember { MusicController(context) }
+    val discovery = remember { LoopBoxHomeDiscoveryRepository(LoopBoxMediaScraper()) }
+    val checker = remember { LoopBoxMediaFileChecker() }
+    val downloader = remember { LoopBoxMediaDownloadService() }
+    val extra = remember { mutableStateMapOf<BrowseTab, List<BrowseRow>>() }
+    var homeSections by remember { mutableStateOf<Map<LoopBoxMediaKind, List<LoopBoxMediaItem>>?>(null) }
+    var resolving by remember { mutableStateOf<String?>(null) }
+    var video by remember { mutableStateOf<VideoSession?>(null) }
     DisposableEffect(music) { onDispose { music.release() } }
 
     LaunchedEffect(tab, reload) {
@@ -199,6 +215,21 @@ fun BrowseScreen(
         }
     }
 
+    // Full songs and films found by the LoopBox media scraper (files verified before they are shown).
+    LaunchedEffect(tab) {
+        if (tab == BrowseTab.Novels || extra[tab] != null) return@LaunchedEffect
+        val sections: Map<LoopBoxMediaKind, List<LoopBoxMediaItem>> = homeSections
+            ?: try { discovery.refreshHome().also { homeSections = it } } catch (e: Exception) { emptyMap() }
+        fun row(title: String, kind: LoopBoxMediaKind): BrowseRow? =
+            sections[kind].orEmpty().filter { it.files.isNotEmpty() }.map { it.toBrowse(tab) }
+                .takeIf { it.isNotEmpty() }?.let { BrowseRow(title, it) }
+        extra[tab] = if (tab == BrowseTab.Music) {
+            listOfNotNull(row("Free full songs", LoopBoxMediaKind.MUSIC))
+        } else {
+            listOfNotNull(row("Free full movies", LoopBoxMediaKind.MOVIE), row("Free full TV series", LoopBoxMediaKind.SERIES))
+        }
+    }
+
     LaunchedEffect(query, tab, searchKind) {
         val q = query.trim()
         if (q.length < 2) {
@@ -212,19 +243,34 @@ fun BrowseScreen(
         try {
             when (tab) {
                 BrowseTab.Novels -> results = BrowseRepository.searchNovels(q)
-                BrowseTab.Music -> results = BrowseRepository.searchMusic(q)
+                BrowseTab.Music -> {
+                    val own = try {
+                        discovery.search(q, LoopBoxMediaKind.MUSIC).filter { it.files.isNotEmpty() }.map { it.toBrowse(BrowseTab.Music) }
+                    } catch (e: Exception) { emptyList() }
+                    results = own
+                    results = (own + BrowseRepository.searchMusic(q)).distinctBy { it.id }
+                }
                 BrowseTab.Watch -> {
                     val type = when (searchKind) {
                         "Movies" -> AppContentType.MOVIE
                         "TV Series" -> AppContentType.SERIES
                         else -> AppContentType.ANIME
                     }
+                    val ownKind = when (searchKind) {
+                        "Movies" -> LoopBoxMediaKind.MOVIE
+                        "TV Series" -> LoopBoxMediaKind.SERIES
+                        else -> null
+                    }
+                    val own = if (ownKind == null) emptyList() else try {
+                        discovery.search(q, ownKind).filter { it.files.isNotEmpty() }.map { it.toBrowse(BrowseTab.Watch) }
+                    } catch (e: Exception) { emptyList() }
+                    if (own.isNotEmpty()) results = own
                     val cloudSearch = koin.getOrNull<CloudMediaSearch>()
                     val cloud = try { cloudSearch?.search(q, type, AppLanguage.EN).orEmpty() } catch (e: Exception) { emptyList() }
-                    if (cloud.isNotEmpty()) results = cloud.map { it.toBrowse() }
+                    if (cloud.isNotEmpty()) results = own + cloud.map { it.toBrowse() }
                     try {
                         koin.get<AnimeRepository>().searchApiProgressive(q, type, AppLanguage.EN).collect { list ->
-                            if (list.isNotEmpty()) results = CloudMediaSearch.mergeCloudFirst(cloud, list).map { it.toBrowse() }.distinctBy { it.id }
+                            if (list.isNotEmpty()) results = (own + CloudMediaSearch.mergeCloudFirst(cloud, list).map { it.toBrowse() }).distinctBy { it.id }
                         }
                     } catch (e: Exception) {
                         // keep whatever arrived
@@ -258,11 +304,67 @@ fun BrowseScreen(
         }
     }
 
+    fun playFullVideo(item: BrowseItem) {
+        scope.launch {
+            resolving = "Finding the full video…"
+            try {
+                val files = bestFileGroup(item.files, video = true)
+                val first = checker.check(files.first())
+                if (first.playable) {
+                    video = VideoSession(item.title, listOf(first.finalUrl) + files.drop(1).map { it.url }, files)
+                } else {
+                    Toast.makeText(context, first.message, Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Couldn't open the video", Toast.LENGTH_SHORT).show()
+            }
+            resolving = null
+        }
+    }
+
+    fun playFullAudio(item: BrowseItem) {
+        scope.launch {
+            resolving = "Finding the full song…"
+            try {
+                val files = if (item.file != null) listOf(item.file) else bestFileGroup(item.files, video = false)
+                val first = checker.check(files.first())
+                if (first.playable) {
+                    val tracks = files.mapIndexed { i, f ->
+                        BrowseItem(id = item.id + "#" + i, tab = BrowseTab.Music, title = fileTitle(f), subtitle = item.title, imageUrl = item.imageUrl, file = f)
+                    }
+                    music.play(tracks, listOf(first.finalUrl) + files.drop(1).map { it.url })
+                } else {
+                    Toast.makeText(context, first.message, Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Couldn't play this song", Toast.LENGTH_SHORT).show()
+            }
+            resolving = null
+        }
+    }
+
+    fun download(files: List<LoopBoxMediaFile>, folder: String) {
+        scope.launch {
+            try {
+                val saved = downloadFiles(context, files, folder, checker, downloader) { i, n ->
+                    Toast.makeText(context, "Downloading $i of $n…", Toast.LENGTH_SHORT).show()
+                }
+                Toast.makeText(
+                    context,
+                    if (saved.isEmpty()) "Nothing could be downloaded" else "Saved to " + saved.first().parentFile?.path,
+                    Toast.LENGTH_LONG,
+                ).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Download failed: " + (e.message ?: ""), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     fun openItem(item: BrowseItem, siblings: List<BrowseItem>) {
         when (item.tab) {
-            BrowseTab.Watch -> openWatch(item)
+            BrowseTab.Watch -> if (item.files.isNotEmpty()) playFullVideo(item) else openWatch(item)
             BrowseTab.Novels -> reading = item
-            BrowseTab.Music -> {
+            BrowseTab.Music -> if (item.files.isNotEmpty() || item.file != null) playFullAudio(item) else {
                 val playable = siblings.filter { it.previewUrl != null }
                 val start = playable.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
                 if (playable.isNotEmpty()) music.play(playable, playable.map { it.previewUrl!! }, start)
@@ -332,7 +434,7 @@ fun BrowseScreen(
                 }
             } else {
                 val chip = if (tab == BrowseTab.Watch) watchChip else "All"
-                val rows = feed.rows
+                val rows = (extra[tab].orEmpty() + feed.rows)
                     .map { r -> if (chip == "All") r else r.copy(items = r.items.filter { it.kind == chip }) }
                     .filter { it.items.isNotEmpty() }
                 val hero = if (chip == "All") feed.hero else rows.flatMap { it.items }.filter { it.imageUrl != null }.distinctBy { it.id }.take(8)
@@ -358,6 +460,7 @@ fun BrowseScreen(
             }
         }
 
+        resolving?.let { msg -> ResolvingOverlay(msg) }
         if (opening) {
             Box(Modifier.fillMaxSize().background(Color(0x99000000)), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Accent)
@@ -370,12 +473,14 @@ fun BrowseScreen(
                 onToggle = { music.toggle() },
                 onNext = { music.next() },
                 onPrev = { music.previous() },
+                onDownload = cur.file?.let { f -> { download(listOf(f), "Music") } },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset + 8.dp, start = 12.dp, end = 12.dp),
             )
         }
     }
 
     reading?.let { book -> BookReaderDialog(book) { reading = null } }
+    video?.let { v -> VideoDialog(v, onClose = { video = null }, onDownload = { download(v.files, "Movies") }) }
 }
 
 @Composable
@@ -547,6 +652,55 @@ private fun PosterCard(item: BrowseItem, modifier: Modifier = Modifier, rank: In
     }
 }
 
+private data class VideoSession(val title: String, val urls: List<String>, val files: List<LoopBoxMediaFile>)
+
+/** Loading skeleton shown while the scraper's file is being verified. */
+@Composable
+private fun ResolvingOverlay(message: String) {
+    val brush = shimmerBrush()
+    Box(Modifier.fillMaxSize().background(Color(0xE60A0A0A)).clickable { }, contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(20.dp)).background(brush))
+            Box(Modifier.fillMaxWidth(0.6f).height(18.dp).clip(RoundedCornerShape(6.dp)).background(brush))
+            Box(Modifier.fillMaxWidth(0.4f).height(14.dp).clip(RoundedCornerShape(6.dp)).background(brush))
+            Text(message, color = Muted, fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun VideoDialog(session: VideoSession, onClose: () -> Unit, onDownload: () -> Unit) {
+    val context = LocalContext.current
+    val exo = remember(session) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItems(session.urls.map { MediaItem.fromUri(it) })
+            prepare()
+            playWhenReady = true
+        }
+    }
+    DisposableEffect(exo) { onDispose { exo.release() } }
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            AndroidView(
+                factory = { ctx -> PlayerView(ctx).apply { player = exo; useController = true } },
+                modifier = Modifier.fillMaxSize(),
+            )
+            Row(
+                Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding().padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White) }
+                Text(session.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                TextButton(onClick = onDownload) { Text("Download", color = Accent, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
+
 @Composable
 private fun MiniPlayer(
     item: BrowseItem,
@@ -555,6 +709,7 @@ private fun MiniPlayer(
     onNext: () -> Unit,
     onPrev: () -> Unit,
     modifier: Modifier = Modifier,
+    onDownload: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xF21C1C1E)).padding(8.dp),
@@ -569,6 +724,9 @@ private fun MiniPlayer(
         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
             Text(item.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(item.subtitle, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (onDownload != null) {
+            IconButton(onClick = onDownload) { Icon(Icons.Filled.Download, contentDescription = "Download", tint = Fg) }
         }
         IconButton(onClick = onPrev) { Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous", tint = Fg) }
         IconButton(onClick = onToggle) {

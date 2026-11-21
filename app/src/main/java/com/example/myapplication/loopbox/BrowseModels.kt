@@ -1,5 +1,6 @@
 package com.example.myapplication.loopbox
 
+import com.example.myapplication.mediacatalog.LoopBoxMediaFile
 import com.example.myapplication.network.ApiSearchResult
 
 enum class BrowseTab(val label: String) {
@@ -24,6 +25,10 @@ data class BrowseItem(
     val textUrl: String? = null,
     /** The app's own search model: lets the existing "add to collection" system take over. */
     val api: ApiSearchResult? = null,
+    /** Files found by the LoopBox media scraper for this item (full songs / films). */
+    val files: List<LoopBoxMediaFile> = emptyList(),
+    /** One track of a scraped album. */
+    val file: LoopBoxMediaFile? = null,
 )
 
 data class BrowseRow(val title: String, val items: List<BrowseItem>)
