@@ -44,6 +44,22 @@ jobs:
             if [ -n "$v" ]; then echo "$k=$v" >> local.properties; fi
           done
 
+      - name: Write local.properties from secrets
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
+          TASTEDIVE_API_KEY: ${{ secrets.TASTEDIVE_API_KEY }}
+          OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
+          GOOGLE_BOOKS_API_KEY: ${{ secrets.GOOGLE_BOOKS_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
+        run: |
+          : > local.properties
+          for k in TMDB_API_KEY TRAKT_CLIENT_ID TASTEDIVE_API_KEY OMDB_API_KEY GOOGLE_BOOKS_API_KEY YOUTUBE_API_KEY FANART_API_KEY; do
+            v="${!k}"
+            if [ -n "$v" ]; then echo "$k=$v" >> local.properties; fi
+          done
+
       - name: Build release (unsigned)
         run: |
           chmod +x gradlew
