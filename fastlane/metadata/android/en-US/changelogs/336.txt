@@ -1,7 +1,0 @@
-New icon and your own servers.
-• A new V icon that follows the system light or dark theme.
-• Books from your own Audiobookshelf or Subsonic/Navidrome server, with chapters.
-• Public-domain films from Internet Archive.
-• "Additional sources": import .vetro files and community sources.
-• Book search ranks by title and author; local books resume offline.
-• Fixes: frozen spinners in Books, glass turning black after returning to the app, card bars while a season airs.

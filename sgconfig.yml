@@ -1,3 +1,0 @@
-# ast-grep project config — UI guardrails for Vetro (run: scripts/lint-ui.sh)
-ruleDirs:
-  - rules
