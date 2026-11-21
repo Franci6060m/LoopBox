@@ -53,6 +53,8 @@ import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
 val appModule = module {
+    // Federated metadata + openly licensed/public-domain file discovery.
+    single { com.example.myapplication.mediacatalog.MediaDiscoverySearch(get<okhttp3.OkHttpClient>()) }
     single { StatsPhraseCatalog(androidContext()) }
     single { ResolveStatsFooterPhraseUseCase(catalog = get(), settingsDataStore = get(named("settings"))) }
     single<AnimeRepository> { AnimeRepository(apiService = get(), localDataSource = get(), titleTracking = get()) }
