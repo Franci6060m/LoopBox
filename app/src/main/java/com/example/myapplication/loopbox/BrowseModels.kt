@@ -1,8 +1,9 @@
 package com.example.myapplication.loopbox
 
+import com.example.myapplication.network.ApiSearchResult
+
 enum class BrowseTab(val label: String) {
-    Movies("Movies"),
-    TV("TV"),
+    Watch("Watch"),
     Novels("Novels"),
     Music("Music"),
 }
@@ -13,22 +14,21 @@ data class BrowseItem(
     val tab: BrowseTab,
     val title: String,
     val subtitle: String = "",
-    val year: String = "",
+    /** "Anime", "Movies" or "TV Series" for the Watch tab. */
+    val kind: String = "",
     val imageUrl: String? = null,
     val description: String = "",
-    /** Internet Archive identifier: a free, full-length file exists for this item. */
-    val iaId: String? = null,
-    /** 30-second preview or trailer (iTunes / Deezer). */
+    /** 30-second preview (Deezer). */
     val previewUrl: String? = null,
-    /** Page where a novel can be read. */
-    val readUrl: String? = null,
+    /** Plain-text book (Project Gutenberg). */
+    val textUrl: String? = null,
+    /** The app's own search model: lets the existing "add to collection" system take over. */
+    val api: ApiSearchResult? = null,
 )
 
 data class BrowseRow(val title: String, val items: List<BrowseItem>)
 
 data class BrowseFeed(
     val hero: List<BrowseItem>,
-    /** Genre chips with their ranked lists (the "Rankings" / "Top charts" block). */
-    val charts: Map<String, List<BrowseItem>>,
     val rows: List<BrowseRow>,
 )

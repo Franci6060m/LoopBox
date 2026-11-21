@@ -78,6 +78,24 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import com.example.myapplication.data.local.AnimeLocalDataSource
+import com.example.myapplication.domain.recommendations.RecommendationEngine
+import com.example.myapplication.domain.search.AddFromApiUseCase
+import com.example.myapplication.mediacatalog.CloudMediaSearch
+import com.example.myapplication.network.ApiService
+import com.example.myapplication.network.AppContentType
+import com.example.myapplication.network.AppLanguage
+import com.example.myapplication.data.repository.AnimeRepository
+import com.example.myapplication.loopbox.BrowseRepository.toBrowse
+import kotlinx.coroutines.flow.first
+import org.koin.compose.getKoin
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.layout.PaddingValues
 import com.example.myapplication.data.models.Anime
 import com.example.myapplication.data.models.MediaType
 import com.example.myapplication.data.repository.ImageStorageRepository
@@ -145,6 +163,7 @@ fun BrowseScreen(
     onOpenInLibrary: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val koin = getKoin()
     val scope = rememberCoroutineScope()
     var tabIndex by rememberSaveable { mutableStateOf(0) }
     val tab = BrowseTab.entries[tabIndex.coerceIn(0, BrowseTab.entries.size - 1)]
@@ -152,11 +171,14 @@ fun BrowseScreen(
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    var watchChip by rememberSaveable { mutableStateOf("All") }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    var searchKind by rememberSaveable { mutableStateOf("Anime") }
     var results by remember { mutableStateOf<List<BrowseItem>>(emptyList()) }
-    var selected by remember { mutableStateOf<BrowseItem?>(null) }
-    var videoUrls by remember { mutableStateOf<List<String>?>(null) }
+    var searchBusy by remember { mutableStateOf(false) }
+    var opening by remember { mutableStateOf(false) }
+    var reading by remember { mutableStateOf<BrowseItem?>(null) }
     val music = remember { MusicController(context) }
     DisposableEffect(music) { onDispose { music.release() } }
 
@@ -165,52 +187,93 @@ fun BrowseScreen(
             loading = true
             error = null
             try {
-                feeds[tab] = BrowseRepository.feed(tab)
+                feeds[tab] = when (tab) {
+                    BrowseTab.Watch -> BrowseRepository.watchFeed(koin.get<RecommendationEngine>(), koin.get<ApiService>())
+                    BrowseTab.Novels -> BrowseRepository.novelsFeed()
+                    BrowseTab.Music -> BrowseRepository.musicFeed()
+                }
             } catch (e: Exception) {
                 error = "Couldn't reach the catalog. Check your connection."
             }
             loading = false
         }
     }
-    LaunchedEffect(query, tab) {
-        if (query.trim().length < 2) {
+
+    LaunchedEffect(query, tab, searchKind) {
+        val q = query.trim()
+        if (q.length < 2) {
             results = emptyList()
-        } else {
-            delay(400)
-            results = BrowseRepository.search(tab, query)
+            searchBusy = false
+            return@LaunchedEffect
+        }
+        delay(400)
+        searchBusy = true
+        results = emptyList()
+        try {
+            when (tab) {
+                BrowseTab.Novels -> results = BrowseRepository.searchNovels(q)
+                BrowseTab.Music -> results = BrowseRepository.searchMusic(q)
+                BrowseTab.Watch -> {
+                    val type = when (searchKind) {
+                        "Movies" -> AppContentType.MOVIE
+                        "TV Series" -> AppContentType.SERIES
+                        else -> AppContentType.ANIME
+                    }
+                    val cloudSearch = koin.getOrNull<CloudMediaSearch>()
+                    val cloud = try { cloudSearch?.search(q, type, AppLanguage.EN).orEmpty() } catch (e: Exception) { emptyList() }
+                    if (cloud.isNotEmpty()) results = cloud.map { it.toBrowse() }
+                    try {
+                        koin.get<AnimeRepository>().searchApiProgressive(q, type, AppLanguage.EN).collect { list ->
+                            if (list.isNotEmpty()) results = CloudMediaSearch.mergeCloudFirst(cloud, list).map { it.toBrowse() }.distinctBy { it.id }
+                        }
+                    } catch (e: Exception) {
+                        // keep whatever arrived
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // empty results are shown below
+        }
+        searchBusy = false
+    }
+
+    /** Opening any title adds it to the collection first (no manual "add"), then shows its page. */
+    fun openWatch(item: BrowseItem) {
+        val api = item.api ?: return
+        if (opening) return
+        opening = true
+        scope.launch {
+            try {
+                val t0 = System.currentTimeMillis()
+                koin.get<AddFromApiUseCase>().invoke(api)
+                val all = koin.get<AnimeLocalDataSource>().observeAllAnime().first()
+                val match = all.firstOrNull { it.title.equals(api.title, ignoreCase = true) }
+                    ?: all.filter { it.dateAdded >= t0 - 2000 }.maxByOrNull { it.dateAdded }
+                if (match != null) onOpenInLibrary(match.id)
+                else Toast.makeText(context, "Couldn't open this title", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Couldn't open this title", Toast.LENGTH_SHORT).show()
+            }
+            opening = false
         }
     }
 
     fun openItem(item: BrowseItem, siblings: List<BrowseItem>) {
-        if (item.tab == BrowseTab.Music) {
-            scope.launch {
-                try {
-                    if (item.iaId != null) {
-                        val tracks = BrowseRepository.audioTracks(item.iaId)
-                        if (tracks.isEmpty()) {
-                            Toast.makeText(context, "No playable file found", Toast.LENGTH_SHORT).show()
-                        } else {
-                            val items = tracks.mapIndexed { i, t -> item.copy(id = item.id + "#" + i, title = t.first, subtitle = item.title) }
-                            music.play(items, tracks.map { it.second })
-                        }
-                    } else {
-                        val playable = siblings.filter { it.previewUrl != null }
-                        val start = playable.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
-                        music.play(playable, playable.map { it.previewUrl!! }, start)
-                    }
-                } catch (e: Exception) {
-                    Toast.makeText(context, "Couldn't play this track", Toast.LENGTH_SHORT).show()
-                }
+        when (item.tab) {
+            BrowseTab.Watch -> openWatch(item)
+            BrowseTab.Novels -> reading = item
+            BrowseTab.Music -> {
+                val playable = siblings.filter { it.previewUrl != null }
+                val start = playable.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
+                if (playable.isNotEmpty()) music.play(playable, playable.map { it.previewUrl!! }, start)
             }
-        } else {
-            selected = item
         }
     }
 
     Box(modifier = modifier.fillMaxSize().background(Bg)) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = bottomInset + 96.dp),
+            contentPadding = PaddingValues(bottom = bottomInset + 96.dp),
         ) {
             item {
                 TabBar(
@@ -229,12 +292,17 @@ fun BrowseScreen(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
+                if (tab == BrowseTab.Watch) {
+                    item { ChipRow(listOf("Anime", "Movies", "TV Series"), searchKind) { searchKind = it } }
+                }
+            } else if (tab == BrowseTab.Watch) {
+                item { ChipRow(listOf("All", "Anime", "Movies", "TV Series"), watchChip) { watchChip = it } }
             }
             val feed = feeds[tab]
             if (searching && query.trim().length >= 2) {
-                item { SectionTitle("Results") }
-                if (results.isEmpty()) {
-                    item { Text("Nothing found yet", color = Muted, modifier = Modifier.padding(20.dp)) }
+                item { SectionTitle(if (searchBusy && results.isEmpty()) "Searching…" else "Results") }
+                if (results.isEmpty() && !searchBusy) {
+                    item { Text("Nothing found", color = Muted, modifier = Modifier.padding(20.dp)) }
                 } else {
                     val rows = results.chunked(3)
                     items(rows.size) { r ->
@@ -249,12 +317,8 @@ fun BrowseScreen(
                         }
                     }
                 }
-            } else if (loading && feed == null) {
-                item {
-                    Box(Modifier.fillMaxWidth().height(320.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Accent)
-                    }
-                }
+            } else if (feed == null && (loading || error == null)) {
+                item { FeedSkeleton() }
             } else if (feed == null) {
                 item {
                     Column(
@@ -267,21 +331,26 @@ fun BrowseScreen(
                     }
                 }
             } else {
-                if (feed.hero.isNotEmpty()) {
-                    item { Hero(feed.hero) { openItem(it, feed.hero) } }
+                val chip = if (tab == BrowseTab.Watch) watchChip else "All"
+                val rows = feed.rows
+                    .map { r -> if (chip == "All") r else r.copy(items = r.items.filter { it.kind == chip }) }
+                    .filter { it.items.isNotEmpty() }
+                val hero = if (chip == "All") feed.hero else rows.flatMap { it.items }.filter { it.imageUrl != null }.distinctBy { it.id }.take(8)
+                if (hero.isNotEmpty()) {
+                    item(key = "hero_" + tab.name + chip) { Hero(hero) { openItem(it, hero) } }
                 }
-                if (feed.charts.isNotEmpty()) {
-                    item { Charts(if (tab == BrowseTab.Music) "Top charts" else if (tab == BrowseTab.Novels) "Popular" else "Rankings", feed.charts) { it2, list -> openItem(it2, list) } }
+                if (rows.isEmpty()) {
+                    item { Text("Nothing here yet", color = Muted, modifier = Modifier.padding(20.dp)) }
                 }
-                feed.rows.forEach { row ->
-                    item(key = tab.name + row.title) {
+                rows.forEach { row ->
+                    item(key = tab.name + chip + row.title) {
                         SectionTitle(row.title)
                         LazyRow(
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            itemsIndexed(row.items, key = { _, it2 -> it2.id }) { _, it2 ->
-                                PosterCard(it2, Modifier.width(130.dp)) { openItem(it2, row.items) }
+                            itemsIndexed(row.items, key = { _, it2 -> it2.id }) { index, it2 ->
+                                PosterCard(it2, Modifier.width(132.dp), rank = if (row.title.startsWith("Top") || row.title.startsWith("Popular")) index + 1 else null) { openItem(it2, row.items) }
                             }
                         }
                     }
@@ -289,6 +358,11 @@ fun BrowseScreen(
             }
         }
 
+        if (opening) {
+            Box(Modifier.fillMaxSize().background(Color(0x99000000)), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Accent)
+            }
+        }
         music.current?.let { cur ->
             MiniPlayer(
                 item = cur,
@@ -301,15 +375,58 @@ fun BrowseScreen(
         }
     }
 
-    selected?.let { item ->
-        DetailSheet(
-            item = item,
-            onDismiss = { selected = null },
-            onPlay = { urls -> videoUrls = urls },
-            onOpenInLibrary = { id -> selected = null; onOpenInLibrary(id) },
-        )
+    reading?.let { book -> BookReaderDialog(book) { reading = null } }
+}
+
+@Composable
+private fun ChipRow(names: List<String>, selected: String, onSelect: (String) -> Unit) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        itemsIndexed(names, key = { _, n -> n }) { _, n ->
+            val on = n == selected
+            Box(
+                Modifier.clip(RoundedCornerShape(50)).background(if (on) Color(0xFFF5F0E8) else Color(0xFF2A2A2C))
+                    .clickable { onSelect(n) }.padding(horizontal = 20.dp, vertical = 10.dp),
+            ) { Text(n, color = if (on) Color(0xFF111111) else Fg, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
+        }
     }
-    videoUrls?.let { urls -> VideoDialog(urls) { videoUrls = null } }
+}
+
+@Composable
+private fun shimmerBrush(): Brush {
+    val t = rememberInfiniteTransition(label = "shimmer")
+    val x by t.animateFloat(
+        initialValue = 0f,
+        targetValue = 1200f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Restart),
+        label = "x",
+    )
+    return Brush.linearGradient(
+        colors = listOf(Color(0xFF161618), Color(0xFF262629), Color(0xFF161618)),
+        start = Offset(x - 400f, 0f),
+        end = Offset(x, 0f),
+    )
+}
+
+/** Placeholder shown while a feed loads: the hero and two rows of posters. */
+@Composable
+private fun FeedSkeleton() {
+    val brush = shimmerBrush()
+    Column {
+        Box(Modifier.fillMaxWidth().height(400.dp).background(brush))
+        repeat(2) {
+            Spacer(Modifier.height(22.dp))
+            Box(Modifier.padding(start = 20.dp).width(150.dp).height(22.dp).clip(RoundedCornerShape(6.dp)).background(brush))
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                repeat(3) {
+                    Box(Modifier.width(120.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp)).background(brush))
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -374,7 +491,7 @@ private fun Hero(items: List<BrowseItem>, onOpen: (BrowseItem) -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text(item.title, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(
-                            listOf(item.subtitle, item.year).filter { it.isNotBlank() }.joinToString(" · "),
+                            item.subtitle,
                             color = Fg,
                             fontSize = 15.sp,
                             maxLines = 1,
@@ -403,35 +520,6 @@ private fun Hero(items: List<BrowseItem>, onOpen: (BrowseItem) -> Unit) {
 }
 
 @Composable
-private fun Charts(title: String, charts: Map<String, List<BrowseItem>>, onOpen: (BrowseItem, List<BrowseItem>) -> Unit) {
-    val names = charts.keys.toList()
-    var selectedName by remember(names) { mutableStateOf(names.first()) }
-    val list = charts[selectedName].orEmpty()
-    SectionTitle(title)
-    LazyRow(
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        itemsIndexed(names, key = { _, n -> n }) { _, n ->
-            val on = n == selectedName
-            Box(
-                Modifier.clip(RoundedCornerShape(50)).background(if (on) Color(0xFFF5F0E8) else Color(0xFF2A2A2C))
-                    .clickable { selectedName = n }.padding(horizontal = 20.dp, vertical = 12.dp),
-            ) { Text(n, color = if (on) Color(0xFF111111) else Fg, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-        }
-    }
-    Spacer(Modifier.height(14.dp))
-    LazyRow(
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        itemsIndexed(list, key = { _, it2 -> it2.id }) { index, it2 ->
-            PosterCard(it2, Modifier.width(140.dp), rank = index + 1) { onOpen(it2, list) }
-        }
-    }
-}
-
-@Composable
 private fun PosterCard(item: BrowseItem, modifier: Modifier = Modifier, rank: Int? = null, onClick: () -> Unit) {
     val square = item.tab == BrowseTab.Music
     Column(modifier.clickable(onClick = onClick)) {
@@ -454,7 +542,7 @@ private fun PosterCard(item: BrowseItem, modifier: Modifier = Modifier, rank: In
         }
         Spacer(Modifier.height(8.dp))
         Text(item.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        val sub = listOf(item.subtitle, item.year).filter { it.isNotBlank() }.joinToString(" · ")
+        val sub = item.subtitle
         if (sub.isNotBlank()) Text(sub, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -490,153 +578,3 @@ private fun MiniPlayer(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DetailSheet(
-    item: BrowseItem,
-    onDismiss: () -> Unit,
-    onPlay: (List<String>) -> Unit,
-    onOpenInLibrary: (String) -> Unit,
-) {
-    val context = LocalContext.current
-    val local: AnimeLocalDataSource = koinInject()
-    val images: ImageStorageRepository = koinInject()
-    var fullParts by remember(item.id) { mutableStateOf<List<String>?>(null) }
-    var lookingUp by remember(item.id) { mutableStateOf(item.tab == BrowseTab.Movies || item.tab == BrowseTab.TV) }
-    var libraryId by remember(item.id) { mutableStateOf<String?>(null) }
-    val isVideo = item.tab == BrowseTab.Movies || item.tab == BrowseTab.TV
-
-    LaunchedEffect(item.id) {
-        if (!isVideo) return@LaunchedEffect
-        try {
-            val ia = BrowseRepository.findFreeVideo(item)
-            if (ia != null) fullParts = BrowseRepository.videoParts(ia).ifEmpty { null }
-        } catch (e: Exception) {
-            fullParts = null
-        }
-        lookingUp = false
-    }
-    // Opening a movie or show puts it into the Library, so nobody has to add titles by hand.
-    LaunchedEffect(item.id) {
-        if (!isVideo) return@LaunchedEffect
-        try {
-            val prefs = context.getSharedPreferences("loopbox_browse", Context.MODE_PRIVATE)
-            val known = prefs.getString("lib_" + item.id, null)
-            if (known != null) {
-                libraryId = known
-            } else {
-                val id = UUID.randomUUID().toString()
-                val file = item.imageUrl?.let { images.saveImageFromUrl(it, id).getOrNull() }
-                val movie = item.tab == BrowseTab.Movies
-                local.insertAnime(
-                    Anime(
-                        id = id,
-                        title = item.title,
-                        episodes = 1,
-                        rating = 0f,
-                        imageFileName = file,
-                        orderIndex = 0,
-                        dateAdded = System.currentTimeMillis(),
-                        categoryType = if (movie) "MOVIE" else "SERIES",
-                        mediaType = if (movie) MediaType.MOVIE else MediaType.SERIES,
-                        releaseYear = item.year.toIntOrNull(),
-                    ),
-                )
-                prefs.edit().putString("lib_" + item.id, id).apply()
-                libraryId = id
-            }
-        } catch (e: Exception) {
-            libraryId = null
-        }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color(0xFF1C1C1E),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                AsyncImage(
-                    model = item.imageUrl,
-                    contentDescription = item.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.width(110.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(14.dp)).background(CardBg),
-                )
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(item.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    Text(listOf(item.subtitle, item.year).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 14.sp)
-                    if (libraryId != null) Text("Added to your Library", color = Accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            if (item.description.isNotBlank()) {
-                Text(item.description, color = Fg, fontSize = 14.sp, maxLines = 7, overflow = TextOverflow.Ellipsis)
-            }
-            if (isVideo) {
-                when {
-                    lookingUp -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        CircularProgressIndicator(Modifier.size(18.dp), color = Accent, strokeWidth = 2.dp)
-                        Text("Looking for a free full version…", color = Muted, fontSize = 13.sp)
-                    }
-                    fullParts != null -> Button(
-                        onClick = { onPlay(fullParts!!) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent),
-                    ) { Text("▶ Play full" + if (fullParts!!.size > 1) " (${fullParts!!.size} parts)" else "", fontWeight = FontWeight.Bold) }
-                    else -> Text("No free full version found. Use your Library page to open it with your sources.", color = Muted, fontSize = 13.sp)
-                }
-                if (item.previewUrl != null) {
-                    OutlinedButton(
-                        onClick = { onPlay(listOf(item.previewUrl)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        border = BorderStroke(1.dp, Color(0xFF3A3A3C)),
-                    ) { Text("Watch trailer", color = Fg) }
-                }
-                if (libraryId != null) {
-                    OutlinedButton(
-                        onClick = { onOpenInLibrary(libraryId!!) },
-                        modifier = Modifier.fillMaxWidth(),
-                        border = BorderStroke(1.dp, Color(0xFF3A3A3C)),
-                    ) { Text("Open in Library", color = Fg) }
-                }
-            }
-            if (item.tab == BrowseTab.Novels && item.readUrl != null) {
-                Button(
-                    onClick = {
-                        try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.readUrl)))
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "No app can open this link", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent),
-                ) { Text("📖 Read", fontWeight = FontWeight.Bold) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun VideoDialog(urls: List<String>, onClose: () -> Unit) {
-    val context = LocalContext.current
-    val exo = remember(urls) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItems(urls.map { MediaItem.fromUri(it) })
-            prepare()
-            playWhenReady = true
-        }
-    }
-    DisposableEffect(exo) { onDispose { exo.release() } }
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
-            AndroidView(
-                factory = { ctx -> PlayerView(ctx).apply { player = exo; useController = true } },
-                modifier = Modifier.fillMaxSize(),
-            )
-            IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp)) {
-                Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
-            }
-        }
-    }
-}
