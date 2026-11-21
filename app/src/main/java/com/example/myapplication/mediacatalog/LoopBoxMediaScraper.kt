@@ -60,9 +60,9 @@ class LoopBoxMediaScraper(
 ) {
     suspend fun loadHomePage(perSection: Int = 12): Map<LoopBoxMediaKind, List<LoopBoxMediaItem>> =
         coroutineScope {
-            val music = async { discoverMusic("popular", perSection) }
-            val movies = async { discoverMovies("popular", perSection) }
-            val series = async { discoverSeries("popular", perSection) }
+            val music = async { runCatching { discoverMusic("popular", perSection) }.getOrDefault(emptyList()) }
+            val movies = async { runCatching { discoverMovies("popular", perSection) }.getOrDefault(emptyList()) }
+            val series = async { runCatching { discoverSeries("popular", perSection) }.getOrDefault(emptyList()) }
             mapOf(
                 LoopBoxMediaKind.MUSIC to music.await(),
                 LoopBoxMediaKind.MOVIE to movies.await(),
@@ -99,7 +99,7 @@ class LoopBoxMediaScraper(
                     files = emptyList() // iTunes preview URLs are not treated as downloadable files.
                 )
             }
-            val archive = searchArchive(query, "audio", limit)
+            val archive = runCatching { searchArchive(query, "audio", limit) }.getOrDefault(emptyList())
             (metadata + archive).distinctBy { it.id }.take(limit)
         }
 
@@ -107,10 +107,11 @@ class LoopBoxMediaScraper(
         withContext(Dispatchers.IO) {
             val archiveQuery = if (query == "popular") "mediatype:movies AND (licenseurl:*creativecommons.org* OR licenseurl:*publicdomain*)" else
                 "mediatype:movies AND (title:\"${escapeArchive(query)}\" OR description:\"${escapeArchive(query)}\")"
-            val archive = searchArchiveQuery(archiveQuery, LoopBoxMediaKind.MOVIE, limit)
+            val archive = runCatching { searchArchiveQuery(archiveQuery, LoopBoxMediaKind.MOVIE, limit) }.getOrDefault(emptyList())
             val cinemeta = runCatching {
-                val slug = enc(if (query == "popular") "popular" else query)
-                val json = getJson("https://v3-cinemeta.strem.io/catalog/movie/top/search=$slug.json")
+                val url = if (query == "popular") "https://v3-cinemeta.strem.io/catalog/movie/top.json"
+                else "https://v3-cinemeta.strem.io/catalog/movie/top/search=${enc(query)}.json"
+                val json = getJson(url)
                 parseCinemeta(json, LoopBoxMediaKind.MOVIE, limit)
             }.getOrDefault(emptyList())
             (archive + cinemeta).distinctBy { it.id }.take(limit)
@@ -119,8 +120,7 @@ class LoopBoxMediaScraper(
     private suspend fun discoverSeries(query: String, limit: Int): List<LoopBoxMediaItem> =
         withContext(Dispatchers.IO) {
             val tvQuery = if (query == "popular") "drama" else query
-            val json = getJson("https://api.tvmaze.com/search/shows?q=${enc(tvQuery)}")
-            val rows = json.optJSONArray("") ?: json as? JSONArray ?: JSONArray()
+            val rows = runCatching { getJsonArray("https://api.tvmaze.com/search/shows?q=${enc(tvQuery)}") }.getOrDefault(JSONArray())
             val items = mutableListOf<LoopBoxMediaItem>()
             for (i in 0 until minOf(rows.length(), limit)) {
                 val hit = rows.optJSONObject(i) ?: continue
@@ -138,12 +138,14 @@ class LoopBoxMediaScraper(
                     files = emptyList()
                 )
             }
-            val archive = searchArchiveQuery(
-                if (query == "popular") "mediatype:movies AND subject:television" else
-                    "mediatype:movies AND title:\"${escapeArchive(query)}\"",
-                LoopBoxMediaKind.SERIES,
-                limit
-            )
+            val archive = runCatching {
+                searchArchiveQuery(
+                    if (query == "popular") "mediatype:movies AND subject:television" else
+                        "mediatype:movies AND title:\"${escapeArchive(query)}\"",
+                    LoopBoxMediaKind.SERIES,
+                    limit
+                )
+            }.getOrDefault(emptyList())
             (items + archive).distinctBy { it.id }.take(limit)
         }
 
@@ -222,7 +224,7 @@ class LoopBoxMediaScraper(
     }
 
     private fun parseCinemeta(json: JSONObject, kind: LoopBoxMediaKind, limit: Int): List<LoopBoxMediaItem> {
-        val metas = json.optJSONObject("metas")?.optJSONArray("metas") ?: JSONArray()
+        val metas = json.optJSONArray("metas") ?: JSONArray()
         val output = mutableListOf<LoopBoxMediaItem>()
         for (i in 0 until minOf(metas.length(), limit)) {
             val row = metas.optJSONObject(i) ?: continue
@@ -246,6 +248,14 @@ class LoopBoxMediaScraper(
         http.newCall(request).execute().use { response ->
             check(response.isSuccessful) { "Discovery source returned HTTP ${response.code}" }
             JSONObject(response.body?.string().orEmpty())
+        }
+    }
+
+    private suspend fun getJsonArray(url: String): JSONArray = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(url).header("User-Agent", "LoopBoxMediaDiscovery/1.0").get().build()
+        http.newCall(request).execute().use { response ->
+            check(response.isSuccessful) { "Discovery source returned HTTP ${response.code}" }
+            JSONArray(response.body?.string().orEmpty())
         }
     }
 
