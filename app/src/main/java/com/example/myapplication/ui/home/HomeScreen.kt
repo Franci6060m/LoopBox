@@ -178,6 +178,7 @@ fun HomeScreen(
     onDockVisibleChange: (Boolean) -> Unit = {},
 ) {
     val genreRepository: GenreRepository = koinInject()
+    val mediaDiscoverySearch: com.example.myapplication.mediacatalog.MediaDiscoverySearch = koinInject()
     val listSyncCoordinator: ExternalListSyncCoordinator = koinInject()
     val supabaseSyncCoordinator: SupabaseSyncCoordinator = koinInject()
     val collectionImageRestoreCoordinator: CollectionImageRestoreCoordinator = koinInject()
@@ -827,6 +828,13 @@ fun HomeScreen(
                                 item {
                                     VetroWorkspaceTopBar(
                                         strings = getStrings(currentLanguage),
+                                    )
+                                }
+
+                                item(key = "media_discovery_home_feed", contentType = "media_discovery_home_feed") {
+                                    MediaDiscoveryHomeFeed(
+                                        search = mediaDiscoverySearch,
+                                        modifier = Modifier.padding(horizontal = 16.dp),
                                     )
                                 }
 

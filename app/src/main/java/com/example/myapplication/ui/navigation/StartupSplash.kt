@@ -78,7 +78,7 @@ internal fun StartupSplashOverlay(
     val plan by produceState<SplashPlan?>(initialValue = null) {
         val prefs = settingsStore.data.first()
         val repeat = prefs[DevPreferencesKeys.SPLASH_SEEN_VERSION] == BuildConfig.VERSION_CODE
-        value = SplashPlan(legacy = prefs[DevPreferencesKeys.LEGACY_SPLASH] ?: false, repeatLaunch = repeat)
+        // Always use the current LoopBox brand animation. A persisted legacy flag from an older\n        // installation must never override the refreshed startup identity.\n        value = SplashPlan(legacy = false, repeatLaunch = repeat)
         if (!repeat) settingsStore.edit { it[DevPreferencesKeys.SPLASH_SEEN_VERSION] = BuildConfig.VERSION_CODE }
     }
     val resolved = plan
