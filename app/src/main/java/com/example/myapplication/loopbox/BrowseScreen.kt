@@ -30,6 +30,9 @@ import com.example.myapplication.ui.home.recommendations.RecommendationsSheet
 import com.example.myapplication.ui.home.recommendations.RecommendationsUiState
 import com.example.myapplication.ui.home.recommendations.RecommendationsViewModel
 import com.example.myapplication.ui.home.recommendations.getRecommendationsStrings
+import com.example.myapplication.data.repository.AnimeRepository
+import com.example.myapplication.network.ApiSearchResult
+import com.example.myapplication.network.AppContentType
 import org.koin.androidx.compose.koinViewModel
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
@@ -169,6 +172,7 @@ fun BrowseScreen(
     val recsStrings = getRecommendationsStrings(AppLanguage.EN)
     val genreRepository: GenreRepository = koinInject()
     var showRecs by remember { mutableStateOf(false) }
+    val animeRepository: AnimeRepository = koinInject()
     var query by rememberSaveable { mutableStateOf("") }
     var results by remember { mutableStateOf<List<BrowseItem>>(emptyList()) }
     var selected by remember { mutableStateOf<BrowseItem?>(null) }
@@ -195,7 +199,26 @@ fun BrowseScreen(
             results = emptyList()
         } else {
             delay(400)
-            results = BrowseRepository.search(tab, query)
+            // Both engines: Browse's free sources first, then the app's own progressive catalogue search.
+            val own = BrowseRepository.search(tab, query)
+            results = own
+            val type = when (tab) {
+                BrowseTab.Movies -> AppContentType.MOVIE
+                BrowseTab.TV -> AppContentType.SERIES
+                else -> null
+            }
+            if (type != null) {
+                try {
+                    animeRepository.searchApiProgressive(query.trim(), type, AppLanguage.EN).collect { list ->
+                        val extra = list.mapNotNull { r -> apiResultToItem(r, tab) }
+                        results = (own + extra).distinctBy { it.title.lowercase() }
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // The free-source results stay on screen.
+                }
+            }
         }
     }
 
@@ -387,6 +410,18 @@ fun BrowseScreen(
             },
         )
     }
+}
+
+private fun apiResultToItem(r: ApiSearchResult, tab: BrowseTab): BrowseItem? {
+    if (r.title.isBlank()) return null
+    return BrowseItem(
+        id = "api" + (r.externalId ?: r.title),
+        tab = tab,
+        title = r.title,
+        subtitle = r.genres.take(2).joinToString(", "),
+        imageUrl = r.posterUrl,
+        description = r.description,
+    )
 }
 
 private fun enqueueDownload(context: Context, url: String, fileName: String, dir: String) {
