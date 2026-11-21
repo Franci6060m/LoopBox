@@ -215,6 +215,8 @@ object BrowseRepository {
             val author = b.optJSONArray("authors").objects().firstOrNull()?.str("name").orEmpty()
             val formats = b.optJSONObject("formats")
             val read = formats?.str("text/html").orEmpty().ifBlank { "https://www.gutenberg.org/ebooks/$id" }
+            val textKey = formats?.keys()?.asSequence()?.firstOrNull { it.startsWith("text/plain") }
+            val text = textKey?.let { formats.str(it) }?.takeIf { it.startsWith("http") }
             BrowseItem(
                 id = "pg$id",
                 tab = BrowseTab.Novels,
@@ -223,8 +225,21 @@ object BrowseRepository {
                 imageUrl = formats?.str("image/jpeg")?.takeIf { it.startsWith("http") },
                 description = "Public-domain English book from Project Gutenberg.",
                 readUrl = read,
+                textUrl = text,
             )
         }.distinctBy { it.id }
+    }
+
+    /** Downloads a Gutenberg plain-text book and returns its paragraphs, without the licence header and footer. */
+    suspend fun bookParagraphs(textUrl: String): List<String> {
+        var t = get(textUrl).replace("\r\n", "\n")
+        val start = Regex("\\*\\*\\* ?START OF[^\\n]*\\n").find(t)
+        if (start != null) t = t.substring(start.range.last + 1)
+        val end = Regex("\\*\\*\\* ?END OF").find(t)
+        if (end != null) t = t.substring(0, end.range.first)
+        return t.split(Regex("\\n\\s*\\n"))
+            .map { it.replace(Regex("\\s*\\n\\s*"), " ").trim() }
+            .filter { it.isNotEmpty() }
     }
 
     // ---------------- TVmaze (no key) ----------------
@@ -287,7 +302,7 @@ object BrowseRepository {
                     async {
                         val ol = safe { novels("subject:\"${s.lowercase()}\"") } ?: emptyList()
                         val pg = safe { gutenberg("", s.lowercase()) } ?: emptyList()
-                        s to (ol + pg).distinctBy { it.title.lowercase() }
+                        s to (pg + ol).distinctBy { it.title.lowercase() }
                     }
                 }
                 val all = jobs.awaitAll().filter { it.second.isNotEmpty() }
@@ -323,7 +338,7 @@ object BrowseRepository {
             BrowseTab.Novels -> {
                 val a = async { safe { novels(q, 30) } ?: emptyList() }
                 val b = async { safe { gutenberg(q) } ?: emptyList() }
-                (a.await() + b.await()).distinctBy { it.title.lowercase() }
+                (b.await() + a.await()).distinctBy { it.title.lowercase() }
             }
             BrowseTab.Music -> {
                 val a = async { safe { deezerItems(json("https://api.deezer.com/search?q=${enc(q)}&limit=30").optJSONArray("data")) } ?: emptyList() }

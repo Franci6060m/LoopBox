@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
@@ -158,6 +159,7 @@ fun BrowseScreen(
     var selected by remember { mutableStateOf<BrowseItem?>(null) }
     var videoUrls by remember { mutableStateOf<List<String>?>(null) }
     var readerUrl by remember { mutableStateOf<String?>(null) }
+    var novel by remember { mutableStateOf<BrowseItem?>(null) }
     val music = remember { MusicController(context) }
     DisposableEffect(music) { onDispose { music.release() } }
 
@@ -334,7 +336,7 @@ fun BrowseScreen(
             item = item,
             onDismiss = { selected = null },
             onPlay = { urls -> videoUrls = urls },
-            onRead = { url -> readerUrl = url },
+            onRead = { b -> if (b.textUrl != null) novel = b else readerUrl = b.readUrl },
             downloadMode = downloadMode,
             onModeChange = { downloadMode = it; modePrefs.edit().putString("mode", if (it) "download" else "stream").apply() },
             onOpenInLibrary = { id -> selected = null; onOpenInLibrary(id) },
@@ -342,6 +344,7 @@ fun BrowseScreen(
     }
     videoUrls?.let { urls -> VideoDialog(urls) { videoUrls = null } }
     readerUrl?.let { url -> ReaderDialog(url) { readerUrl = null } }
+    novel?.let { b -> NovelReader(b) { novel = null } }
 }
 
 private fun enqueueDownload(context: Context, url: String, fileName: String, dir: String) {
@@ -352,6 +355,70 @@ private fun enqueueDownload(context: Context, url: String, fileName: String, dir
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setDestinationInExternalFilesDir(context, dir, fileName),
     )
+}
+
+/** The app's own text reader: fetches the book, shows it page-less with adjustable size, remembers the place. */
+@Composable
+private fun NovelReader(item: BrowseItem, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("loopbox_reader", Context.MODE_PRIVATE) }
+    var paragraphs by remember(item.id) { mutableStateOf<List<String>?>(null) }
+    var failed by remember(item.id) { mutableStateOf(false) }
+    var fontSize by remember { mutableIntStateOf(prefs.getInt("font", 18)) }
+    val listState = rememberLazyListState()
+    var restored by remember(item.id) { mutableStateOf(false) }
+
+    LaunchedEffect(item.id) {
+        try {
+            paragraphs = BrowseRepository.bookParagraphs(item.textUrl!!).ifEmpty { null }
+            failed = paragraphs == null
+        } catch (e: Exception) {
+            failed = true
+        }
+    }
+    LaunchedEffect(paragraphs) {
+        val p = paragraphs ?: return@LaunchedEffect
+        val saved = prefs.getInt("pos_" + item.id, 0).coerceIn(0, (p.size - 1).coerceAtLeast(0))
+        listState.scrollToItem(saved)
+        restored = true
+    }
+    LaunchedEffect(listState.firstVisibleItemIndex, restored) {
+        if (restored) prefs.edit().putInt("pos_" + item.id, listState.firstVisibleItemIndex).apply()
+    }
+
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxSize().background(Color(0xFF111111)).statusBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(item.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (item.subtitle.isNotBlank()) Text(item.subtitle, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                OutlinedButton(onClick = { fontSize = (fontSize - 2).coerceAtLeast(12); prefs.edit().putInt("font", fontSize).apply() }) { Text("A−", color = Fg) }
+                Spacer(Modifier.width(6.dp))
+                OutlinedButton(onClick = { fontSize = (fontSize + 2).coerceAtMost(32); prefs.edit().putInt("font", fontSize).apply() }) { Text("A+", color = Fg) }
+                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White) }
+            }
+            val p = paragraphs
+            when {
+                failed -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Couldn't load this book. Check your connection.", color = Muted)
+                }
+                p == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Accent)
+                }
+                else -> LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    items(p.size) { i ->
+                        Text(p[i], color = Color(0xFFDDDDDD), fontSize = fontSize.sp, lineHeight = (fontSize * 1.6f).sp)
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** Reads a book inside the app: Project Gutenberg text, or an Internet Archive / Open Library page. */
@@ -571,7 +638,7 @@ private fun DetailSheet(
     item: BrowseItem,
     onDismiss: () -> Unit,
     onPlay: (List<String>) -> Unit,
-    onRead: (String) -> Unit,
+    onRead: (BrowseItem) -> Unit,
     downloadMode: Boolean,
     onModeChange: (Boolean) -> Unit,
     onOpenInLibrary: (String) -> Unit,
@@ -711,7 +778,7 @@ private fun DetailSheet(
             }
             if (item.tab == BrowseTab.Novels && item.readUrl != null) {
                 Button(
-                    onClick = { onRead(item.readUrl) },
+                    onClick = { onRead(item) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Accent),
                 ) { Text("📖 Read", fontWeight = FontWeight.Bold) }
