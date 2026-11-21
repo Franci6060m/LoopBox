@@ -218,7 +218,7 @@ class LoopBoxMediaScraper(
                 source = "Internet Archive"
             )
         }
-        output
+        return output
     }
 
     private fun parseCinemeta(json: JSONObject, kind: LoopBoxMediaKind, limit: Int): List<LoopBoxMediaItem> {
