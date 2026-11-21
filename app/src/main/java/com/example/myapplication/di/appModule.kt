@@ -57,6 +57,7 @@ val appModule = module {
     single { com.example.myapplication.mediacatalog.MediaDiscoverySearch(get<okhttp3.OkHttpClient>()) }
     single { com.example.myapplication.mediacatalog.OpenWebMediaSearch(get<okhttp3.OkHttpClient>()) }
     single { com.example.myapplication.mediacatalog.LocalVideoAudioConverter(androidContext()) }
+    single { com.example.myapplication.mediacatalog.OnlineMediaImportService(get<okhttp3.OkHttpClient>(), get(), androidContext().cacheDir) }
     single { StatsPhraseCatalog(androidContext()) }
     single { ResolveStatsFooterPhraseUseCase(catalog = get(), settingsDataStore = get(named("settings"))) }
     single<AnimeRepository> { AnimeRepository(apiService = get(), localDataSource = get(), titleTracking = get()) }
