@@ -132,12 +132,16 @@ class TmdbRemoteDataSource(private val client: HttpClient) {
         language: AppLanguage,
         page: Int = 1,
         minVotes: Int = 300,
+        sortBy: String = "vote_average.desc",
+        /** ISO-дата `yyyy-MM-dd`: только тайтлы не старше этой даты (свежая выдача). */
+        since: String? = null,
     ): LookupResult<List<ApiSearchResult>> = list(
         isTv, language, page, "discover", kind(isTv),
         extra = buildMap {
             if (genreIds.isNotEmpty()) put("with_genres", genreIds.joinToString("|"))
-            put("sort_by", "vote_average.desc")
+            put("sort_by", sortBy)
             put("vote_count.gte", minVotes.toString())
+            if (since != null) put(if (isTv) "first_air_date.gte" else "primary_release_date.gte", since)
         },
     )
 

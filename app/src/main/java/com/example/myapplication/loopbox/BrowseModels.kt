@@ -3,6 +3,7 @@ package com.example.myapplication.loopbox
 enum class BrowseTab(val label: String) {
     Movies("Movies"),
     TV("TV"),
+    Anime("Anime"),
     Novels("Novels"),
     Music("Music"),
 }
@@ -22,6 +23,10 @@ data class BrowseItem(
     val previewUrl: String? = null,
     /** Page where a novel can be read. */
     val readUrl: String? = null,
+    /** Карточка нативного каталога (TMDB / AniList / ...): по ней тайтл попадает в Library со связкой источников. */
+    val api: com.example.myapplication.network.ApiSearchResult? = null,
+    /** TMDB id из рекомендаций движка (если карточка пришла оттуда). */
+    val tmdbId: Int? = null,
 )
 
 data class BrowseRow(val title: String, val items: List<BrowseItem>)

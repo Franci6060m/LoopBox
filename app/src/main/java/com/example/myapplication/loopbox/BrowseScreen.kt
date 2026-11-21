@@ -7,6 +7,8 @@ import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -159,6 +161,11 @@ fun BrowseScreen(
     var videoUrls by remember { mutableStateOf<List<String>?>(null) }
     val music = remember { MusicController(context) }
     DisposableEffect(music) { onDispose { music.release() } }
+    val tmdbSource: com.example.myapplication.network.tmdb.TmdbRemoteDataSource = koinInject()
+    val anilistSource: com.example.myapplication.network.AniListRemoteDataSource = koinInject()
+    val apiService: com.example.myapplication.network.ApiService = koinInject()
+    val recEngine: com.example.myapplication.domain.recommendations.RecommendationEngine = koinInject()
+    remember { BrowseRepository.bind(tmdbSource, anilistSource, apiService, recEngine) }
 
     LaunchedEffect(tab, reload) {
         if (feeds[tab] == null) {
@@ -250,11 +257,7 @@ fun BrowseScreen(
                     }
                 }
             } else if (loading && feed == null) {
-                item {
-                    Box(Modifier.fillMaxWidth().height(320.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Accent)
-                    }
-                }
+                item { BrowseSkeleton(Modifier.padding(top = 8.dp)) }
             } else if (feed == null) {
                 item {
                     Column(
@@ -306,6 +309,24 @@ fun BrowseScreen(
             item = item,
             onDismiss = { selected = null },
             onPlay = { urls -> videoUrls = urls },
+            onListen = { novel ->
+                scope.launch {
+                    try {
+                        Toast.makeText(context, "Looking for a narrated version…", Toast.LENGTH_SHORT).show()
+                        val id = BrowseRepository.findAudiobook(novel)
+                        val tracks = if (id == null) emptyList() else BrowseRepository.audioTracks(id)
+                        if (tracks.isEmpty()) {
+                            Toast.makeText(context, "No narrated version of this novel yet", Toast.LENGTH_LONG).show()
+                        } else {
+                            selected = null
+                            val items = tracks.mapIndexed { i, t -> novel.copy(id = novel.id + "#" + i, tab = BrowseTab.Music, title = t.first, subtitle = novel.title) }
+                            music.play(items, tracks.map { it.second })
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Couldn't load the narration", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
             onOpenInLibrary = { id -> selected = null; onOpenInLibrary(id) },
         )
     }
@@ -318,7 +339,7 @@ private fun TabBar(tabIndex: Int, onTab: (Int) -> Unit, onSearch: () -> Unit) {
         modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             BrowseTab.entries.forEachIndexed { i, t ->
                 Column(Modifier.clickable { onTab(i) }) {
                     Text(
@@ -496,26 +517,15 @@ private fun DetailSheet(
     item: BrowseItem,
     onDismiss: () -> Unit,
     onPlay: (List<String>) -> Unit,
+    onListen: (BrowseItem) -> Unit = {},
     onOpenInLibrary: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val local: AnimeLocalDataSource = koinInject()
     val images: ImageStorageRepository = koinInject()
-    var fullParts by remember(item.id) { mutableStateOf<List<String>?>(null) }
-    var lookingUp by remember(item.id) { mutableStateOf(item.tab == BrowseTab.Movies || item.tab == BrowseTab.TV) }
     var libraryId by remember(item.id) { mutableStateOf<String?>(null) }
-    val isVideo = item.tab == BrowseTab.Movies || item.tab == BrowseTab.TV
+    val isVideo = item.tab == BrowseTab.Movies || item.tab == BrowseTab.TV || item.tab == BrowseTab.Anime
 
-    LaunchedEffect(item.id) {
-        if (!isVideo) return@LaunchedEffect
-        try {
-            val ia = BrowseRepository.findFreeVideo(item)
-            if (ia != null) fullParts = BrowseRepository.videoParts(ia).ifEmpty { null }
-        } catch (e: Exception) {
-            fullParts = null
-        }
-        lookingUp = false
-    }
     // Opening a movie or show puts it into the Library, so nobody has to add titles by hand.
     LaunchedEffect(item.id) {
         if (!isVideo) return@LaunchedEffect
@@ -527,19 +537,28 @@ private fun DetailSheet(
             } else {
                 val id = UUID.randomUUID().toString()
                 val file = item.imageUrl?.let { images.saveImageFromUrl(it, id).getOrNull() }
-                val movie = item.tab == BrowseTab.Movies
+                val api = item.api
+                val src = api?.source?.uppercase().orEmpty()
+                val ext = api?.externalId?.toIntOrNull()
+                val kind = when (item.tab) { BrowseTab.Movies -> MediaType.MOVIE; BrowseTab.Anime -> MediaType.ANIME; else -> MediaType.SERIES }
+                val episodes = (api?.totalEpisodes ?: api?.airedEpisodes ?: api?.episodes ?: 0).coerceAtLeast(1)
                 local.insertAnime(
                     Anime(
                         id = id,
                         title = item.title,
-                        episodes = 1,
+                        episodes = episodes,
                         rating = 0f,
                         imageFileName = file,
                         orderIndex = 0,
                         dateAdded = System.currentTimeMillis(),
-                        categoryType = if (movie) "MOVIE" else "SERIES",
-                        mediaType = if (movie) MediaType.MOVIE else MediaType.SERIES,
+                        categoryType = api?.categoryType?.takeIf { it.isNotBlank() } ?: kind.name,
+                        mediaType = kind,
                         releaseYear = item.year.toIntOrNull(),
+                        // Link to the real source so the app loads every season/episode itself.
+                        tmdbId = item.tmdbId ?: if (src.contains("TMDB")) ext else null,
+                        anilistId = if (src.contains("ANILIST")) ext else null,
+                        shikimoriId = if (src.contains("SHIKIMORI")) ext else null,
+                        malId = api?.malId ?: if (src == "MAL" || src == "JIKAN") ext else null,
                     ),
                 )
                 prefs.edit().putString("lib_" + item.id, id).apply()
@@ -573,32 +592,12 @@ private fun DetailSheet(
                 Text(item.description, color = Fg, fontSize = 14.sp, maxLines = 7, overflow = TextOverflow.Ellipsis)
             }
             if (isVideo) {
-                when {
-                    lookingUp -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        CircularProgressIndicator(Modifier.size(18.dp), color = Accent, strokeWidth = 2.dp)
-                        Text("Looking for a free full version…", color = Muted, fontSize = 13.sp)
-                    }
-                    fullParts != null -> Button(
-                        onClick = { onPlay(fullParts!!) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent),
-                    ) { Text("▶ Play full" + if (fullParts!!.size > 1) " (${fullParts!!.size} parts)" else "", fontWeight = FontWeight.Bold) }
-                    else -> Text("No free full version found. Use your Library page to open it with your sources.", color = Muted, fontSize = 13.sp)
-                }
-                if (item.previewUrl != null) {
-                    OutlinedButton(
-                        onClick = { onPlay(listOf(item.previewUrl)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        border = BorderStroke(1.dp, Color(0xFF3A3A3C)),
-                    ) { Text("Watch trailer", color = Fg) }
-                }
-                if (libraryId != null) {
-                    OutlinedButton(
-                        onClick = { onOpenInLibrary(libraryId!!) },
-                        modifier = Modifier.fillMaxWidth(),
-                        border = BorderStroke(1.dp, Color(0xFF3A3A3C)),
-                    ) { Text("Open in Library", color = Fg) }
-                }
+                Button(
+                    onClick = { libraryId?.let(onOpenInLibrary) },
+                    enabled = libraryId != null,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                ) { Text(if (libraryId == null) "Adding to Library…" else "▶ Watch · all seasons & episodes", fontWeight = FontWeight.Bold) }
             }
             if (item.tab == BrowseTab.Novels && item.readUrl != null) {
                 Button(
@@ -612,6 +611,13 @@ private fun DetailSheet(
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Accent),
                 ) { Text("📖 Read", fontWeight = FontWeight.Bold) }
+            }
+            if (item.tab == BrowseTab.Novels) {
+                OutlinedButton(
+                    onClick = { onListen(item) },
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, Color(0xFF3A3A3C)),
+                ) { Text("🎧 Listen · human narrator", color = Fg) }
             }
         }
     }
