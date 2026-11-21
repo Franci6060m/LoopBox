@@ -65,6 +65,71 @@ class MediaDiscoverySearch(
         .build()
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** Curated first-screen catalogue feeds; metadata/artwork only unless a separately licensed file is found. */
+    suspend fun featured(kind: DiscoveryKind, limit: Int = 20): List<DiscoveryHit> = withContext(Dispatchers.IO) {
+        val count = limit.coerceIn(1, 50)
+        try {
+            when (kind) {
+                DiscoveryKind.ANIME -> searchJikanTop(count)
+                DiscoveryKind.SERIES -> searchTvMazeTop(count)
+                DiscoveryKind.MUSIC -> searchItunesTop(count)
+                DiscoveryKind.MOVIE -> searchArchiveFeatured("movies", count)
+            }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
+    }
+
+    private fun searchTvMazeTop(limit: Int): List<DiscoveryHit> {
+        val root = getJson("https://api.tvmaze.com/shows?page=0") as? JsonArray ?: return emptyList()
+        return root.take(limit).mapNotNull { e ->
+            val o = e as? JsonObject ?: return@mapNotNull null
+            val image = o["image"]?.jsonObjectOrNull()
+            DiscoveryHit(o.string("name") ?: return@mapNotNull null, year = o.string("premiered")?.take(4),
+                description = o.string("summary")?.replace(Regex("<[^>]*>"), "")?.take(400),
+                artworkUrl = image?.string("original") ?: image?.string("medium"), metadataUrl = o.string("url"), source = "TVMaze")
+        }
+    }
+
+    private fun searchJikanTop(limit: Int): List<DiscoveryHit> {
+        val root = getJson("https://api.jikan.moe/v4/top/anime?limit=$limit") as? JsonObject ?: return emptyList()
+        return root["data"]?.jsonArray.orEmpty().mapNotNull { e ->
+            val o = e as? JsonObject ?: return@mapNotNull null
+            val jpg = o["images"]?.jsonObjectOrNull()?.get("jpg")?.jsonObjectOrNull()
+            DiscoveryHit(o.string("title_english") ?: o.string("title") ?: return@mapNotNull null,
+                year = o.string("year"), description = o.string("synopsis")?.take(400),
+                artworkUrl = jpg?.string("large_image_url") ?: jpg?.string("image_url"),
+                metadataUrl = o["mal_id"]?.jsonPrimitive?.contentOrNull?.let { "https://myanimelist.net/anime/" + it }, source = "MyAnimeList via Jikan")
+        }
+    }
+
+    private fun searchItunesTop(limit: Int): List<DiscoveryHit> {
+        val root = getJson("https://itunes.apple.com/us/rss/topsongs/limit=$limit/explicit=true/json") as? JsonObject ?: return emptyList()
+        return root["feed"]?.jsonObjectOrNull()?.get("entry")?.jsonArray.orEmpty().mapNotNull { e ->
+            val o = e as? JsonObject ?: return@mapNotNull null
+            val title = o["im:name"]?.jsonObjectOrNull()?.get("label")?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val artist = o["im:artist"]?.jsonObjectOrNull()?.get("label")?.jsonPrimitive?.contentOrNull
+            val image = o["im:image"]?.jsonArray?.lastOrNull()?.jsonObjectOrNull()?.get("label")?.jsonPrimitive?.contentOrNull
+            val link = o["link"]?.jsonArray?.firstOrNull()?.jsonObjectOrNull()?.get("attributes")?.jsonObjectOrNull()?.get("href")?.jsonPrimitive?.contentOrNull
+            DiscoveryHit(title, creator = artist, artworkUrl = image, metadataUrl = link, source = "Apple iTunes")
+        }
+    }
+
+    private fun searchArchiveFeatured(mediaType: String, limit: Int): List<DiscoveryHit> {
+        val url = "$internetArchiveBase/advancedsearch.php".toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("q", "mediatype:$mediaType AND (licenseurl:*creativecommons.org* OR licenseurl:*publicdomain*)")
+            ?.addQueryParameter("fl[]", "identifier,title,creator,year,description,licenseurl")
+            ?.addQueryParameter("rows", limit.toString())?.addQueryParameter("sort[]", "downloads desc")
+            ?.addQueryParameter("output", "json")?.build() ?: return emptyList()
+        val root = getJson(url.toString()) as? JsonObject ?: return emptyList()
+        val docs = root["response"]?.jsonObjectOrNull()?.get("docs")?.jsonArray ?: return emptyList()
+        return docs.mapNotNull { e ->
+            val o = e as? JsonObject ?: return@mapNotNull null
+            val id = o.string("identifier") ?: return@mapNotNull null
+            val license = o.string("licenseurl")
+            DiscoveryHit(o.string("title") ?: return@mapNotNull null, creator = o.string("creator"), year = o.string("year"),
+                description = o.string("description"), metadataUrl = "$internetArchiveBase/details/$id", source = "Internet Archive",
+                files = if (isReusableLicense(license)) loadArchiveFiles(id, license!!) else emptyList())
+        }
+    }
     suspend fun search(query: String, kind: DiscoveryKind, limit: Int = 25): List<DiscoveryHit> {
         val q = query.trim()
         if (q.isEmpty()) return emptyList()
