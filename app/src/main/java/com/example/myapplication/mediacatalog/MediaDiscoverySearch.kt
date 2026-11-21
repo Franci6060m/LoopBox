@@ -20,7 +20,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-enum class DiscoveryKind { MOVIE, SERIES, MUSIC }
+enum class DiscoveryKind { MOVIE, SERIES, ANIME, MUSIC }
 
 /** A metadata hit and, separately, any file that the publisher explicitly makes reusable. */
 data class DiscoveryHit(
@@ -82,7 +82,11 @@ class MediaDiscoverySearch(
                             async { searchArchive(q, "movies", count) },
                         ).map { it.await() }
                         DiscoveryKind.SERIES -> listOf(
+                            async { searchTvMaze(q, count) },
                             async { searchArchive(q, "movies", count) },
+                        ).map { it.await() }
+                        DiscoveryKind.ANIME -> listOf(
+                            async { searchJikan(q, count) },
                         ).map { it.await() }
                     }
                 }
@@ -95,6 +99,49 @@ class MediaDiscoverySearch(
         }
     }
 
+    /** Public TVMaze catalogue metadata and poster artwork for TV series. */
+    private fun searchTvMaze(query: String, limit: Int): List<DiscoveryHit> {
+        val url = "https://api.tvmaze.com/search/shows".toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("q", query)?.build() ?: return emptyList()
+        val results = getJson(url.toString()) as? JsonArray ?: return emptyList()
+        return results.take(limit).mapNotNull { element ->
+            val show = (element as? JsonObject)?.get("show")?.jsonObjectOrNull() ?: return@mapNotNull null
+            val title = show.string("name") ?: return@mapNotNull null
+            val image = show["image"]?.jsonObjectOrNull()
+            DiscoveryHit(
+                title = title,
+                creator = show["network"]?.jsonObjectOrNull()?.string("name"),
+                year = show.string("premiered")?.take(4),
+                description = show.string("summary")?.replace(Regex("<[^>]*>"), "")?.take(500),
+                artworkUrl = image?.string("original") ?: image?.string("medium"),
+                metadataUrl = show.string("url"),
+                source = "TVMaze",
+            )
+        }
+    }
+
+    /** MyAnimeList metadata via Jikan; results are catalogue entries, not downloadable media. */
+    private fun searchJikan(query: String, limit: Int): List<DiscoveryHit> {
+        val url = "https://api.jikan.moe/v4/anime".toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("q", query)
+            ?.addQueryParameter("limit", limit.toString())
+            ?.addQueryParameter("order_by", "popularity")
+            ?.build() ?: return emptyList()
+        val root = getJson(url.toString()) as? JsonObject ?: return emptyList()
+        return root["data"]?.jsonArray.orEmpty().mapNotNull { element ->
+            val o = element as? JsonObject ?: return@mapNotNull null
+            val title = o.string("title_english") ?: o.string("title") ?: return@mapNotNull null
+            val jpg = o["images"]?.jsonObjectOrNull()?.get("jpg")?.jsonObjectOrNull()
+            DiscoveryHit(
+                title = title,
+                year = o.string("year"),
+                description = o.string("synopsis")?.take(500),
+                artworkUrl = jpg?.string("large_image_url") ?: jpg?.string("image_url"),
+                metadataUrl = o["mal_id"]?.jsonPrimitive?.contentOrNull?.let { "https://myanimelist.net/anime/" + it },
+                source = "MyAnimeList via Jikan",
+            )
+        }
+    }
     private fun searchItunes(query: String, limit: Int): List<DiscoveryHit> {
         val url = "$itunesBase/search".toHttpUrlOrNull()?.newBuilder()
             ?.addQueryParameter("term", query)
