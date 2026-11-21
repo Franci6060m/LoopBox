@@ -179,6 +179,8 @@ fun BrowseScreen(
     var videoUrls by remember { mutableStateOf<List<String>?>(null) }
     var readerUrl by remember { mutableStateOf<String?>(null) }
     var novel by remember { mutableStateOf<BrowseItem?>(null) }
+    val modePrefs = remember { context.getSharedPreferences("loopbox_browse", Context.MODE_PRIVATE) }
+    var downloadMode by remember { mutableStateOf(modePrefs.getString("mode", "stream") == "download") }
     val music = remember { MusicController(context) }
     DisposableEffect(music) { onDispose { music.release() } }
 
@@ -727,8 +729,6 @@ private fun DetailSheet(
     var lookingUp by remember(item.id) { mutableStateOf(item.tab == BrowseTab.Movies || item.tab == BrowseTab.TV) }
     var libraryId by remember(item.id) { mutableStateOf<String?>(null) }
     val isVideo = item.tab == BrowseTab.Movies || item.tab == BrowseTab.TV
-    val modePrefs = remember { context.getSharedPreferences("loopbox_browse", Context.MODE_PRIVATE) }
-    var downloadMode by remember { mutableStateOf(modePrefs.getString("mode", "stream") == "download") }
 
     LaunchedEffect(item.id) {
         if (!isVideo) return@LaunchedEffect
