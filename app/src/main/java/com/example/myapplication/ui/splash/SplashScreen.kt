@@ -212,13 +212,14 @@ fun VetroSplashScreen(
                     .graphicsLayer { alpha = 1f - exitProgress.value }
                     .background(MaterialTheme.colorScheme.background),
             ) {
-                LogoSplashCanvas(
+                LoopBoxSplashBrand(
                     timeSec = { logoTime.value },
-                    colors = colors,
+                    dark = dark,
                     modifier = Modifier.graphicsLayer {
-                        val s = 1f + exitProgress.value * 0.08f
+                        val s = 1f + exitProgress.value * 0.06f
                         scaleX = s
                         scaleY = s
+                        alpha = 1f - exitProgress.value
                     },
                 )
             }
