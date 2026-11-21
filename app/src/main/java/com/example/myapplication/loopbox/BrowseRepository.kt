@@ -11,11 +11,21 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.util.Calendar
+import com.example.myapplication.domain.recommendations.ContentType
+import com.example.myapplication.domain.recommendations.RecommendationEngine
+import com.example.myapplication.domain.recommendations.RecommendationItem
+import com.example.myapplication.network.ApiSearchResult
+import com.example.myapplication.network.ApiService
+import com.example.myapplication.network.AniListRemoteDataSource
+import com.example.myapplication.network.AppContentType
+import com.example.myapplication.network.AppLanguage
+import com.example.myapplication.network.LookupResult
+import com.example.myapplication.network.tmdb.TmdbRemoteDataSource
 
 /**
- * Catalog for the Browse page. Same public sources as the LoopBox web prototype:
- * iTunes (movie / TV posters and trailers), Open Library (novels), Deezer (song previews) and
- * the Internet Archive (free full-length films, TV and songs).
+ * Catalog for the Browse page. Movies, TV and Anime use the app's own systems: TMDB / AniList lists,
+ * the recommendation engine ("Picked for you") and the native search. Novels come from Open Library
+ * (English only), music from Deezer, narrated novels from LibriVox on the Internet Archive.
  */
 object BrowseRepository {
     private const val UA = "LoopBox/1.0 (Android)"
@@ -180,7 +190,7 @@ object BrowseRepository {
     // ---------------- Open Library ----------------
 
     private suspend fun novels(query: String, limit: Int = 20): List<BrowseItem> {
-        val url = "https://openlibrary.org/search.json?q=${enc(query)}&has_fulltext=true&limit=$limit" +
+        val url = "https://openlibrary.org/search.json?q=${enc(query)}&has_fulltext=true&public_scan_b=true&language=eng&sort=rating&limit=$limit" +
             "&fields=key,title,author_name,cover_i,first_publish_year,ia"
         return json(url).optJSONArray("docs").objects().mapNotNull { d ->
             val title = d.str("title")
@@ -221,42 +231,130 @@ object BrowseRepository {
     private suspend fun deezerChart(id: Int): List<BrowseItem> =
         deezerItems(json("https://api.deezer.com/chart/$id/tracks?limit=20").optJSONArray("data"))
 
+    // ---------------- Native systems (TMDB / AniList / recommendation engine / app search) ----------------
+
+    private var tmdb: TmdbRemoteDataSource? = null
+    private var anilist: AniListRemoteDataSource? = null
+    private var api: ApiService? = null
+    private var engine: RecommendationEngine? = null
+
+    /** Called once by the screen with the app's own (Koin) services. */
+    fun bind(tmdb: TmdbRemoteDataSource, anilist: AniListRemoteDataSource, api: ApiService, engine: RecommendationEngine) {
+        this.tmdb = tmdb
+        this.anilist = anilist
+        this.api = api
+        this.engine = engine
+    }
+
+    private fun <T> LookupResult<List<T>>.listOrEmpty(): List<T> = if (this is LookupResult.Found) value else emptyList()
+
+    private fun appType(tab: BrowseTab) = when (tab) {
+        BrowseTab.Movies -> AppContentType.MOVIE
+        BrowseTab.TV -> AppContentType.SERIES
+        else -> AppContentType.ANIME
+    }
+
+    private fun ApiSearchResult.toItem(tab: BrowseTab, group: String): BrowseItem = BrowseItem(
+        id = "api" + tab.name + (externalId ?: title.lowercase()),
+        tab = tab,
+        title = titleEn?.takeIf { it.isNotBlank() } ?: title,
+        subtitle = genres.firstOrNull() ?: group,
+        year = seasonYear?.toString().orEmpty(),
+        imageUrl = posterUrl?.takeIf { it.isNotBlank() },
+        description = description,
+        api = this,
+    )
+
+    private fun RecommendationItem.toItem(tab: BrowseTab): BrowseItem = BrowseItem(
+        id = "rec" + tab.name + key,
+        tab = tab,
+        title = title,
+        subtitle = genres.firstOrNull().orEmpty(),
+        imageUrl = coverUrl.takeIf { it.isNotBlank() },
+        description = description,
+        tmdbId = tmdbId,
+    )
+
+    private suspend fun pickedForYou(tab: BrowseTab): List<BrowseItem> {
+        val want = when (tab) { BrowseTab.Movies -> ContentType.MOVIE; BrowseTab.TV -> ContentType.TV; else -> ContentType.ANIME }
+        val e = engine ?: return emptyList()
+        val snap = safe { e.refresh(AppLanguage.EN) } ?: safe { e.cached() } ?: return emptyList()
+        return snap.items.filter { it.contentType == want }.map { it.toItem(tab) }.filter { it.imageUrl != null }.distinctBy { it.title }.take(20)
+    }
+
+    private fun yearsAgo(n: Int): String = "${Calendar.getInstance().get(Calendar.YEAR) - n}-01-01"
+
+    private val movieGenres = listOf("Action" to 28, "Comedy" to 35, "Sci-Fi" to 878, "Horror" to 27, "Drama" to 18, "Thriller" to 53, "Animation" to 16)
+    private val tvGenres = listOf("Drama" to 18, "Comedy" to 35, "Sci-Fi & Fantasy" to 10765, "Crime" to 80, "Action & Adventure" to 10759, "Animation" to 16, "Reality" to 10764)
+
+    private suspend fun screenFeed(tab: BrowseTab): BrowseFeed = coroutineScope {
+        val isTv = tab == BrowseTab.TV
+        val t = tmdb
+        val mine = async { pickedForYou(tab) }
+        if (t != null && t.hasApiKey) {
+            val trending = async { safe { t.trending(isTv, AppLanguage.EN).listOrEmpty().map { it.toItem(tab, "Trending") } } ?: emptyList() }
+            val fresh = async {
+                safe { t.discover(isTv, emptyList(), AppLanguage.EN, minVotes = 150, sortBy = "popularity.desc", since = yearsAgo(1)).listOrEmpty().map { it.toItem(tab, "New") } } ?: emptyList()
+            }
+            val top = async {
+                safe { t.discover(isTv, emptyList(), AppLanguage.EN, minVotes = 2000, sortBy = "vote_average.desc", since = yearsAgo(15)).listOrEmpty().map { it.toItem(tab, "Top rated") } } ?: emptyList()
+            }
+            val genres = (if (isTv) tvGenres else movieGenres).map { (n, id) ->
+                async {
+                    n to (safe { t.discover(isTv, listOf(id), AppLanguage.EN, minVotes = 200, sortBy = "popularity.desc", since = yearsAgo(3)).listOrEmpty().map { it.toItem(tab, n) } } ?: emptyList())
+                }
+            }
+            val trendingItems = trending.await()
+            val charts = genres.awaitAll().filter { it.second.isNotEmpty() }.toMap()
+            val rows = buildList {
+                mine.await().takeIf { it.isNotEmpty() }?.let { add(BrowseRow("Picked for you", it)) }
+                fresh.await().takeIf { it.isNotEmpty() }?.let { add(BrowseRow("New & popular", it)) }
+                top.await().takeIf { it.isNotEmpty() }?.let { add(BrowseRow("Critically acclaimed", it)) }
+            }
+            BrowseFeed(trendingItems.filter { it.imageUrl != null }.take(8), charts, rows)
+        } else {
+            // No TMDB key in this build: the recommendation engine (Trakt / TasteDive / AniList sources) still fills the page.
+            val items = mine.await()
+            val byGenre = items.groupBy { it.subtitle.ifBlank { "More" } }.filterValues { it.size >= 3 }
+            BrowseFeed(items.take(8), byGenre, if (items.isEmpty()) emptyList() else listOf(BrowseRow("Picked for you", items)))
+        }
+    }
+
+    private suspend fun animeFeed(): BrowseFeed = coroutineScope {
+        val al = anilist
+        val mine = async { pickedForYou(BrowseTab.Anime) }
+        val trending = async {
+            if (al == null) emptyList() else (safe { al.trendingAnime(40).getOrNull() } ?: emptyList()).map { it.toItem(BrowseTab.Anime, "Trending") }
+        }
+        val all = trending.await()
+        val byGenre = all.groupBy { it.subtitle.ifBlank { "More" } }.filterValues { it.size >= 3 }
+        val rows = buildList {
+            mine.await().takeIf { it.isNotEmpty() }?.let { add(BrowseRow("Picked for you", it)) }
+            if (all.isNotEmpty()) add(BrowseRow("Trending now", all))
+        }
+        BrowseFeed(all.filter { it.imageUrl != null }.take(8), byGenre, rows)
+    }
+
     // ---------------- Feed + search ----------------
 
     private suspend fun <T> safe(block: suspend () -> T?): T? = try { block() } catch (e: Exception) { null }
 
     suspend fun feed(tab: BrowseTab): BrowseFeed = coroutineScope {
         when (tab) {
-            BrowseTab.Movies, BrowseTab.TV -> {
-                val genres = if (tab == BrowseTab.Movies) listOf("Action", "Comedy", "Horror", "Romance", "Sci-Fi", "Drama")
-                else listOf("Drama", "Comedy", "Crime", "Sci-Fi", "Animation", "Thriller")
-                val free = if (tab == BrowseTab.Movies) listOf("Free full movies" to "", "Free sci-fi" to "sci-fi OR science fiction", "Free horror" to "horror", "Free comedy" to "comedy")
-                else listOf("Free full TV" to "", "Free comedy" to "comedy", "Free kids" to "cartoon")
-                val chartJobs = genres.map { g -> async { g to (safe { itunes(g, tab) } ?: emptyList()) } }
-                val freeJobs = free.map { (l, s) -> async { safe { archiveRow(tab, l, s) } } }
-                val charts = chartJobs.awaitAll().filter { it.second.isNotEmpty() }.toMap()
-                val rows = freeJobs.awaitAll().filterNotNull()
-                val hero = (rows.firstOrNull()?.items.orEmpty() + charts.values.firstOrNull().orEmpty())
-                    .filter { it.imageUrl != null }.take(8)
-                BrowseFeed(hero, charts, rows)
-            }
+            BrowseTab.Movies, BrowseTab.TV -> screenFeed(tab)
+            BrowseTab.Anime -> animeFeed()
             BrowseTab.Novels -> {
-                val subjects = listOf("Fantasy", "Mystery", "Romance", "Science fiction", "History", "Adventure")
+                val subjects = listOf("Fantasy", "Mystery", "Romance", "Science fiction", "History", "Adventure", "Horror")
                 val jobs = subjects.map { s -> async { s to (safe { novels("subject:\"${s.lowercase()}\"") } ?: emptyList()) } }
                 val all = jobs.awaitAll().filter { it.second.isNotEmpty() }
-                val charts = all.toMap()
-                BrowseFeed(all.firstOrNull()?.second.orEmpty().filter { it.imageUrl != null }.take(8), charts, emptyList())
+                BrowseFeed(all.firstOrNull()?.second.orEmpty().filter { it.imageUrl != null }.take(8), all.toMap(), emptyList())
             }
             BrowseTab.Music -> {
                 val genres = listOf("Pop" to 132, "Hip-Hop" to 116, "Rock" to 152, "R&B" to 165, "Dance" to 113, "Jazz" to 129)
-                val free = listOf("Free full songs" to "", "Free rock" to "rock", "Free electronic" to "electronic", "Free jazz" to "jazz", "Free classical" to "classical", "Free ambient" to "ambient")
                 val chartJobs = genres.map { (n, id) -> async { n to (safe { deezerChart(id) } ?: emptyList()) } }
-                val freeJobs = free.map { (l, s) -> async { safe { archiveRow(BrowseTab.Music, l, s) } } }
+                val trending = safe { deezerChart(0) } ?: emptyList()
                 val charts = chartJobs.awaitAll().filter { it.second.isNotEmpty() }.toMap()
-                val rows = freeJobs.awaitAll().filterNotNull()
-                val hero = (rows.firstOrNull()?.items.orEmpty() + charts.values.firstOrNull().orEmpty())
-                    .filter { it.imageUrl != null }.take(8)
-                BrowseFeed(hero, charts, rows)
+                BrowseFeed(trending.filter { it.imageUrl != null }.take(8), charts, if (trending.isEmpty()) emptyList() else listOf(BrowseRow("Trending now", trending)))
             }
         }
     }
@@ -265,22 +363,25 @@ object BrowseRepository {
         val q = query.trim()
         if (q.length < 2) return@coroutineScope emptyList()
         when (tab) {
-            BrowseTab.Movies, BrowseTab.TV -> {
-                val a = async { safe { itunes(q, tab, 30) } ?: emptyList() }
-                val col = if (tab == BrowseTab.TV) "classic_tv" else "feature_films"
-                val b = async {
-                    safe { archive("collection:($col) AND mediatype:(movies) AND title:($q)", 20).filter(::isFreeVideo).map { it.toItem(tab, "Free") } } ?: emptyList()
-                }
-                (b.await() + a.await()).distinctBy { it.id }
+            // Same search as the app's bottom search bar.
+            BrowseTab.Movies, BrowseTab.TV, BrowseTab.Anime -> {
+                val a = api ?: return@coroutineScope emptyList()
+                (safe { a.searchApi(q, appType(tab), AppLanguage.EN).getOrNull() } ?: emptyList())
+                    .map { it.toItem(tab, "Result") }.distinctBy { it.id }
             }
             BrowseTab.Novels -> safe { novels(q, 30) } ?: emptyList()
-            BrowseTab.Music -> {
-                val a = async { safe { deezerItems(json("https://api.deezer.com/search?q=${enc(q)}&limit=30").optJSONArray("data")) } ?: emptyList() }
-                val b = async {
-                    safe { archive("mediatype:(audio) AND title:($q)", 30).filter(::isFreeAudio).map { it.toItem(BrowseTab.Music, "Free") } } ?: emptyList()
-                }
-                (b.await() + a.await()).distinctBy { it.id }
-            }
+            BrowseTab.Music -> safe { deezerItems(json("https://api.deezer.com/search?q=${enc(q)}&limit=30").optJSONArray("data")) } ?: emptyList()
         }
+    }
+
+    // ---------------- Narrated novels (LibriVox on the Internet Archive) ----------------
+
+    /** Identifier of a human-narrated (LibriVox) recording of this novel, if one exists. */
+    suspend fun findAudiobook(item: BrowseItem): String? {
+        val clean = item.title.replace(Regex("[()\":\\[\\]{}]"), " ").trim()
+        if (clean.isBlank()) return null
+        fun norm(s: String) = s.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+        val docs = archive("collection:(librivoxaudio) AND mediatype:(audio) AND title:($clean)", 10)
+        return docs.firstOrNull { norm(it.title).startsWith(norm(item.title)) }?.id
     }
 }

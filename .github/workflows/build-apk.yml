@@ -25,6 +25,13 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Write local.properties (TMDB key from repo secret)
+        env:
+          TMDB: ${{ secrets.TMDB_API_KEY }}
+        run: |
+          : > local.properties
+          if [ -n "$TMDB" ]; then echo "TMDB_API_KEY=$TMDB" >> local.properties; else echo "::warning::TMDB_API_KEY secret is not set - Movies/TV/Anime browse will use fallback sources"; fi
+
       - name: Build release (unsigned)
         run: |
           chmod +x gradlew

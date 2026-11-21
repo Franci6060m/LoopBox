@@ -106,11 +106,14 @@ internal fun StartupSplashOverlay(
         contentReady = contentReady,
         onSplashComplete = { state.visible = false },
         useLegacyAnimation = resolved.legacy,
-        speed = if (resolved.repeatLaunch) RepeatLaunchSpeed else 1f,
+        speed = if (resolved.repeatLaunch) RepeatLaunchSpeed else FirstLaunchSpeed,
     )
 }
 
 /** Во сколько раз заставка быстрее при повторных запусках той же сборки. */
-private const val RepeatLaunchSpeed = 2f
+private const val RepeatLaunchSpeed = 3f
+
+/** Первый запуск сборки: тоже заметно быстрее прежнего. */
+private const val FirstLaunchSpeed = 2f
 
 private class SplashPlan(val legacy: Boolean, val repeatLaunch: Boolean)
