@@ -22,6 +22,15 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.myapplication.data.repository.GenreRepository
+import com.example.myapplication.network.AppLanguage
+import com.example.myapplication.ui.home.recommendations.DiscoveryCard
+import com.example.myapplication.ui.home.recommendations.RecommendationsSheet
+import com.example.myapplication.ui.home.recommendations.RecommendationsUiState
+import com.example.myapplication.ui.home.recommendations.RecommendationsViewModel
+import com.example.myapplication.ui.home.recommendations.getRecommendationsStrings
+import org.koin.androidx.compose.koinViewModel
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -153,7 +162,13 @@ fun BrowseScreen(
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
-    var searching by rememberSaveable { mutableStateOf(false) }
+    var searching by BrowseSearchBus::active
+    DisposableEffect(Unit) { onDispose { BrowseSearchBus.active = false } }
+    val recsViewModel: RecommendationsViewModel = koinViewModel()
+    val recsState by recsViewModel.uiState.collectAsStateWithLifecycle()
+    val recsStrings = getRecommendationsStrings(AppLanguage.EN)
+    val genreRepository: GenreRepository = koinInject()
+    var showRecs by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var results by remember { mutableStateOf<List<BrowseItem>>(emptyList()) }
     var selected by remember { mutableStateOf<BrowseItem?>(null) }
@@ -230,6 +245,17 @@ fun BrowseScreen(
                     onTab = { tabIndex = it; query = "" },
                     onSearch = { searching = !searching; if (!searching) query = "" },
                 )
+            }
+            val recsReady = recsState as? RecommendationsUiState.Ready
+            if (recsReady != null && recsReady.items.isNotEmpty() && !searching) {
+                item(key = "discovery_card") {
+                    DiscoveryCard(
+                        state = recsReady,
+                        strings = recsStrings,
+                        onClick = { showRecs = true },
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
             }
             if (tab != BrowseTab.Novels) {
                 item {
@@ -345,6 +371,22 @@ fun BrowseScreen(
     videoUrls?.let { urls -> VideoDialog(urls) { videoUrls = null } }
     readerUrl?.let { url -> ReaderDialog(url) { readerUrl = null } }
     novel?.let { b -> NovelReader(b) { novel = null } }
+    if (showRecs) {
+        RecommendationsSheet(
+            state = recsState,
+            strings = recsStrings,
+            language = AppLanguage.EN,
+            genreRepository = genreRepository,
+            onAdd = { item -> recsViewModel.addToCollection(item) },
+            onRate = { item, verdict -> recsViewModel.rate(item, verdict) },
+            onUndoRate = { item -> recsViewModel.undoRate(item) },
+            onLoadMore = { recsViewModel.loadMore() },
+            onDismiss = {
+                showRecs = false
+                recsViewModel.onSheetClosed()
+            },
+        )
+    }
 }
 
 private fun enqueueDownload(context: Context, url: String, fileName: String, dir: String) {
