@@ -1,4 +1,4 @@
-name: Build LoopBox release APK
+name: Build release APK
 
 on:
   workflow_dispatch:
@@ -9,104 +9,41 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: "17"
 
-      - name: Accept Android licenses
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.7"
+          channel: stable
+          cache: true
 
-      - uses: gradle/actions/setup-gradle@v4
+      - name: Install dependencies
+        run: flutter pub get
 
-      - name: Write local.properties from secrets
+      - name: Build release APK
+        # The proprietary Discord SDK is gitignored, so CI builds without it.
+        # Without android/key.properties the project signs with the debug key, which is installable.
         env:
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-          TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
-          OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
-          TASTEDIVE_API_KEY: ${{ secrets.TASTEDIVE_API_KEY }}
-          GOOGLE_BOOKS_API_KEY: ${{ secrets.GOOGLE_BOOKS_API_KEY }}
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
-          KINOPOISK_API_KEY: ${{ secrets.KINOPOISK_API_KEY }}
-          POISKKINO_API_KEY: ${{ secrets.POISKKINO_API_KEY }}
-          OPENSUBTITLES_API_KEY: ${{ secrets.OPENSUBTITLES_API_KEY }}
-        run: |
-          : > local.properties
-          for k in TMDB_API_KEY TRAKT_CLIENT_ID OMDB_API_KEY TASTEDIVE_API_KEY GOOGLE_BOOKS_API_KEY YOUTUBE_API_KEY FANART_API_KEY KINOPOISK_API_KEY POISKKINO_API_KEY OPENSUBTITLES_API_KEY; do
-            v="${!k}"
-            if [ -n "$v" ]; then echo "$k=$v" >> local.properties; fi
-          done
-
-      - name: Write local.properties from secrets
-        env:
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-          TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
-          TASTEDIVE_API_KEY: ${{ secrets.TASTEDIVE_API_KEY }}
-          OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
-          GOOGLE_BOOKS_API_KEY: ${{ secrets.GOOGLE_BOOKS_API_KEY }}
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
-        run: |
-          : > local.properties
-          for k in TMDB_API_KEY TRAKT_CLIENT_ID TASTEDIVE_API_KEY OMDB_API_KEY GOOGLE_BOOKS_API_KEY YOUTUBE_API_KEY FANART_API_KEY; do
-            v="${!k}"
-            if [ -n "$v" ]; then echo "$k=$v" >> local.properties; fi
-          done
-
-      - name: Build release (unsigned)
-        run: |
-          chmod +x gradlew
-          set +e
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
-          rc=${PIPESTATUS[0]}
-          if [ $rc -ne 0 ]; then
-            msg=$( (grep -E "^e: |What went wrong|Execution failed|error:|FAILURE|Could not|not found|Unresolved" -A2 build.log | head -40) | cut -c1-300 | sed ':a;N;$!ba;s/\n/%0A/g')
-            echo "::error title=Gradle failed::$msg"
-            exit $rc
-          fi
-
-      - name: Sign release APK
-        env:
-          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
-          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
-          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: |
-          set -e
-          mkdir -p out
-          SRC=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          KS="$RUNNER_TEMP/release.jks"
-          if [ -n "$KS_B64" ]; then
-            echo "$KS_B64" | base64 -d > "$KS"
-            PASS="$KS_PASS"; ALIAS="$KS_ALIAS"
-          else
-            PASS=$(openssl rand -hex 16); ALIAS="loopbox"
-            keytool -genkeypair -keystore "$KS" -storepass "$PASS" -keypass "$PASS" \
-              -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=LoopBox"
-            echo "No signing secrets set: signed with a throwaway key. Add KEYSTORE_BASE64, KEYSTORE_PASSWORD and KEY_ALIAS secrets to keep one signature across builds."
-          fi
-          BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)
-          "$ANDROID_HOME/build-tools/$BT/zipalign" -p -f 4 "$SRC" aligned.apk
-          "$ANDROID_HOME/build-tools/$BT/apksigner" sign --ks "$KS" \
-            --ks-pass "pass:$PASS" --ks-key-alias "$ALIAS" --key-pass "pass:$PASS" \
-            --out out/loopbox-release.apk aligned.apk
-          "$ANDROID_HOME/build-tools/$BT/apksigner" verify out/loopbox-release.apk
+          ZANGETSU_NO_DISCORD: "1"
+        run: flutter build apk --release
 
       - uses: actions/upload-artifact@v4
         with:
-          name: loopbox-release-apk
-          path: out/loopbox-release.apk
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "build-${{ github.run_number }}" out/loopbox-release.apk \
-            --title "LoopBox build ${{ github.run_number }}" \
-            --notes "Release APK for LoopBox."
+          cp build/app/outputs/flutter-apk/app-release.apk app-release.apk
+          gh release create "build-${{ github.run_number }}" app-release.apk \
+            --title "Build ${{ github.run_number }}" \
+            --notes "Release APK."
