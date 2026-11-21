@@ -1,5 +1,6 @@
 package com.example.myapplication.loopbox
 
+import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -505,6 +506,8 @@ private fun DetailSheet(
     var lookingUp by remember(item.id) { mutableStateOf(item.tab == BrowseTab.Movies || item.tab == BrowseTab.TV) }
     var libraryId by remember(item.id) { mutableStateOf<String?>(null) }
     val isVideo = item.tab == BrowseTab.Movies || item.tab == BrowseTab.TV
+    val modePrefs = remember { context.getSharedPreferences("loopbox_browse", Context.MODE_PRIVATE) }
+    var downloadMode by remember { mutableStateOf(modePrefs.getString("mode", "stream") == "download") }
 
     LaunchedEffect(item.id) {
         if (!isVideo) return@LaunchedEffect
@@ -528,11 +531,12 @@ private fun DetailSheet(
                 val id = UUID.randomUUID().toString()
                 val file = item.imageUrl?.let { images.saveImageFromUrl(it, id).getOrNull() }
                 val movie = item.tab == BrowseTab.Movies
+                val epCount = if (movie) 1 else (BrowseRepository.tvEpisodeCount(item.title) ?: 1)
                 local.insertAnime(
                     Anime(
                         id = id,
                         title = item.title,
-                        episodes = 1,
+                        episodes = epCount,
                         rating = 0f,
                         imageFileName = file,
                         orderIndex = 0,
@@ -573,16 +577,47 @@ private fun DetailSheet(
                 Text(item.description, color = Fg, fontSize = 14.sp, maxLines = 7, overflow = TextOverflow.Ellipsis)
             }
             if (isVideo) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Mode", color = Muted, fontSize = 13.sp)
+                    OutlinedButton(
+                        onClick = {
+                            downloadMode = !downloadMode
+                            modePrefs.edit().putString("mode", if (downloadMode) "download" else "stream").apply()
+                        },
+                        border = BorderStroke(1.dp, Color(0xFF3A3A3C)),
+                    ) { Text(if (downloadMode) "Download" else "Stream", color = Fg) }
+                }
                 when {
                     lookingUp -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         CircularProgressIndicator(Modifier.size(18.dp), color = Accent, strokeWidth = 2.dp)
                         Text("Looking for a free full version…", color = Muted, fontSize = 13.sp)
                     }
-                    fullParts != null -> Button(
+                    fullParts != null && !downloadMode -> Button(
                         onClick = { onPlay(fullParts!!) },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Accent),
                     ) { Text("▶ Play full" + if (fullParts!!.size > 1) " (${fullParts!!.size} parts)" else "", fontWeight = FontWeight.Bold) }
+                    fullParts != null -> Button(
+                        onClick = {
+                            try {
+                                val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                fullParts!!.forEachIndexed { i, url ->
+                                    val name = item.title.replace(Regex("[^A-Za-z0-9 ._-]"), "").trim().ifBlank { "video" } +
+                                        (if (fullParts!!.size > 1) " part ${i + 1}" else "") + ".mp4"
+                                    val req = DownloadManager.Request(Uri.parse(url))
+                                        .setTitle(name)
+                                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                        .setDestinationInExternalFilesDir(context, android.os.Environment.DIRECTORY_DOWNLOADS, name)
+                                    dm.enqueue(req)
+                                }
+                                Toast.makeText(context, "Download started", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Could not start the download", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                    ) { Text("⬇ Download full", fontWeight = FontWeight.Bold) }
                     else -> Text("No free full version found. Use your Library page to open it with your sources.", color = Muted, fontSize = 13.sp)
                 }
                 if (item.previewUrl != null) {
